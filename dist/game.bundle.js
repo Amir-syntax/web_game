@@ -10829,7 +10829,14 @@
               radius: 1.5,
               len: 2.4,
               hover: 0,
+              /* AABB collider for world collision */
+              col: {
+                minX: sp.x - 1.8, maxX: sp.x + 1.8,
+                minY: y - 0.5, maxY: y + 2.2,
+                minZ: sp.z - 1.3, maxZ: sp.z + 1.3,
+              },
             });
+            colliders.insert(VEHICLES[VEHICLES.length - 1].col);
           }
           /* boats near the shoreline */
           var made = 0,
@@ -10862,7 +10869,13 @@
               radius: 1.4,
               len: 2.2,
               hover: 0,
+              col: {
+                minX: bx - 1.6, maxX: bx + 1.6,
+                minY: CFG.SEA - 0.8, maxY: CFG.SEA + 1.2,
+                minZ: bz - 1.2, maxZ: bz + 1.2,
+              },
             });
+            colliders.insert(VEHICLES[VEHICLES.length - 1].col);
             made++;
           }
         }
@@ -10912,6 +10925,46 @@
             /* collide with the world */
             var p = { x: nx, z: nz };
             collideXZ(p, v.radius, v.y + 0.2, v.y + 1.6);
+            /* also check platforms and ramps */
+            var hw = v.radius, hl = v.len / 2;
+            var cosV = Math.cos(v.yaw), sinV = Math.sin(v.yaw);
+            var vMinX = 1e9, vMaxX = -1e9, vMinZ = 1e9, vMaxZ = -1e9;
+            var vpts = [[hl,hw],[-hl,hw],[hl,-hw],[-hl,-hw]];
+            for (var vi = 0; vi < vpts.length; vi++) {
+              var vx = nx + vpts[vi][0] * cosV - vpts[vi][1] * sinV;
+              var vz = nz + vpts[vi][0] * sinV + vpts[vi][1] * cosV;
+              if (vx < vMinX) vMinX = vx; if (vx > vMaxX) vMaxX = vx;
+              if (vz < vMinZ) vMinZ = vz; if (vz > vMaxZ) vMaxZ = vz;
+            }
+            var vBotY = v.y - 0.5;
+            /* Check platforms */
+            if (platHash) {
+              var platCandidates = [];
+              platHash.query(nx, nz, platCandidates);
+              for (var pi = 0; pi < platCandidates.length; pi++) {
+                var pl = platCandidates[pi];
+                if (pl.dead) continue;
+                if (vMaxX < pl.minX || vMinX > pl.maxX || vMaxZ < pl.minZ || vMinZ > pl.maxZ) continue;
+                if (vBotY < pl.maxY && v.y + 2.5 > pl.minY) {
+                  p.x = nx; p.z = nz; v.speed = 0; break;
+                }
+              }
+            }
+            /* Check ramps */
+            if (!v.driver || !v.driver.isPlayer || v.speed <= 0) {
+              if (rampHash) {
+                var rampCandidates = [];
+                rampHash.query(nx, nz, rampCandidates);
+                for (var ri = 0; ri < rampCandidates.length; ri++) {
+                  var rm = rampCandidates[ri];
+                  if (rm.dead) continue;
+                  if (vMaxX < rm.minX || vMinX > rm.maxX || vMaxZ < rm.minZ || vMinZ > rm.maxZ) continue;
+                  if (vBotY < rm.maxY && v.y + 2.5 > rm.minY) {
+                    p.x = nx; p.z = nz; v.speed = 0;
+                  }
+                }
+              }
+            }
             if (Math.abs(p.x - nx) > 0.01 || Math.abs(p.z - nz) > 0.01) {
               if (Math.abs(v.speed) > 10)
                 fxDebris(v.x, v.y + 0.8, v.z, "metal", 5);
@@ -10921,6 +10974,25 @@
             }
             v.x = p.x;
             v.z = p.z;
+            /* update vehicle AABB collider */
+            if (v.col) {
+              var hlen = v.len / 2, hwid = v.radius;
+              var cosY = Math.cos(v.yaw), sinY = Math.sin(v.yaw);
+              var cx = v.x, cz = v.z;
+              var minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
+              var pts = [
+                [hlen, hwid], [-hlen, hwid], [hlen, -hwid], [-hlen, -hwid]
+              ];
+              for (var pi = 0; pi < pts.length; pi++) {
+                var rx = cx + pts[pi][0] * cosY - pts[pi][1] * sinY;
+                var rz = cz + pts[pi][0] * sinY + pts[pi][1] * cosY;
+                if (rx < minX) minX = rx; if (rx > maxX) maxX = rx;
+                if (rz < minZ) minZ = rz; if (rz > maxZ) maxZ = rz;
+              }
+              v.col.minX = minX; v.col.maxX = maxX;
+              v.col.minZ = minZ; v.col.maxZ = maxZ;
+              v.col.minY = v.y - 0.5; v.col.maxY = v.y + (isBoat ? 1.2 : 2.2);
+            }
             /* follow the ground */
             if (isBoat) {
               var depth = CFG.SEA - terrainHeightAt(v.x, v.z);
@@ -11012,6 +11084,11 @@
           ch.vy = 0;
           ch.mantle = null;
           ch.mantleAnim = 0;
+          /* Sync character position to vehicle seat so they don't fall through */
+          var seatY = v.type === "boat" ? VEH_SEAT_BOAT : VEH_SEAT_CAR;
+          ch.x = v.x;
+          ch.z = v.z;
+          ch.y = v.y + seatY - SEAT_PELVIS;
           ch.mesh.visible = true;
           if (ch.isPlayer) {
             Sfx.vehicle(true);
