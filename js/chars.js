@@ -3159,8 +3159,8 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
             if (PC.state === "skydive") {
               var dive = Input.forward || Input.axisZ > 0.4;
               var tv = dive ? -CFG.DIVE : Input.back ? -18 : -42;
-              PC.vy = lerp(PC.vy, tv, 1 - Math.exp(-2.4 * dt));
-              var hs = dive ? 27 : 16;
+              PC.vy = lerp(PC.vy, tv, 1 - Math.exp(-1.6 * dt));
+              var hs = dive ? 18 : 10;
               PC.vx = lerp(
                 PC.vx,
                 (fx * fwd + rx * strafe) * hs,
@@ -3171,10 +3171,12 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
                 (fz * fwd + rz * strafe) * hs,
                 1 - Math.exp(-1.8 * dt),
               );
+              /* Auto-deploy glider sooner for better gameplay */
               PC.glideLock = Math.max(0, (PC.glideLock || 0) - dt);
+              var altitude = PC.y - groundAt(PC.x, PC.z, PC.y);
               if (
                 (PC.glideLock <= 0 && jumpEdge) ||
-                PC.y - groundAt(PC.x, PC.z, PC.y) < 32
+                altitude < 50
               )
                 deployGlider(PC);
             } else {

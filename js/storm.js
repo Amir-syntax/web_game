@@ -1,4 +1,4 @@
-import {
+﻿import {
   CFG, SETTINGS, clamp, lerp, smoothstep, dist2, angDiff, approachAngle, fmtTime, expDecay,
   srnd, rnd, rndi, pickOne, chance, col, hexStr,
   hash2i, vnoise, fbm, ridged, makeTex, px, TEX, buildTextures,
@@ -13,7 +13,7 @@ import { UI } from './ui.js';
 import { GAMETIME } from './main.js';
         /* ==== 70_storm.js ==== */
         /* ============================================================================
-   70_STORM — the shrinking circle, its volumetric wall shader, lightning,
+   70_STORM â€” the shrinking circle, its volumetric wall shader, lightning,
    the battle bus and the skydive / glider descent.
    ========================================================================== */
 
@@ -279,93 +279,130 @@ import { GAMETIME } from './main.js';
         function initBusAssets() {
           if (BUS.mesh) return;
           var g = new THREE.Group();
-          var body = new THREE.MeshStandardMaterial({
-            color: col(0x2f4fa8),
-            roughness: 0.45,
-            metalness: 0.5,
-          });
-          var glass = new THREE.MeshStandardMaterial({
-            color: col(0x9fd8ff),
-            roughness: 0.08,
-            metalness: 0.35,
-            transparent: true,
-            opacity: 0.7,
-          });
-          var dark = new THREE.MeshStandardMaterial({
-            color: col(0x1a1f2e),
-            roughness: 0.7,
-          });
-          var trim = new THREE.MeshStandardMaterial({
-            color: col(0xffd76a),
-            metalness: 0.6,
-            roughness: 0.3,
-          });
-          var b = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.6, 9), body);
-          b.castShadow = true;
-          g.add(b);
-          for (var i = -1; i <= 1; i++) {
-            var w = new THREE.Mesh(new THREE.BoxGeometry(3.3, 1.0, 1.6), glass);
-            w.position.set(0, 0.7, i * 2.6);
-            g.add(w);
+          var bodyMat = new THREE.MeshStandardMaterial({ color: col(0x2f4fa8), roughness: 0.38, metalness: 0.55 });
+          var darkBody = new THREE.MeshStandardMaterial({ color: col(0x1e3570), roughness: 0.5, metalness: 0.4 });
+          var glassMat = new THREE.MeshStandardMaterial({ color: col(0xa8d8ff), roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.65 });
+          var trimMat = new THREE.MeshStandardMaterial({ color: col(0xffd76a), metalness: 0.7, roughness: 0.25, emissive: col(0x8a6000), emissiveIntensity: 0.15 });
+          var rubber = new THREE.MeshStandardMaterial({ color: col(0x1a1a1a), roughness: 0.95 });
+          var lightMat = new THREE.MeshStandardMaterial({ color: col(0xffffff), emissive: col(0xffffcc), emissiveIntensity: 0.8 });
+          var tailLight = new THREE.MeshStandardMaterial({ color: col(0xff3333), emissive: col(0xff0000), emissiveIntensity: 0.5 });
+          /* Main body */
+          var bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.8, 9.4), bodyMat);
+          bodyMesh.castShadow = true; bodyMesh.receiveShadow = true;
+          g.add(bodyMesh);
+          /* Roof AC units */
+          for (var ri = 0; ri < 2; ri++) {
+            var ac = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.25, 1.4), darkBody);
+            ac.position.set(0, 1.52, -2 + ri * 4); ac.castShadow = true;
+            g.add(ac);
           }
-          var top = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.3, 9.2), dark);
-          top.position.y = 1.45;
-          g.add(top);
-          var stripe = new THREE.Mesh(
-            new THREE.BoxGeometry(3.28, 0.26, 9.05),
-            trim,
-          );
-          stripe.position.y = -0.3;
-          g.add(stripe);
+          /* Roof trim */
+          var roofTrim = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.08, 9.5), trimMat);
+          roofTrim.position.y = 1.44;
+          g.add(roofTrim);
+          /* Windshield */
+          var windshield = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.3, 0.1), glassMat);
+          windshield.position.set(0, 0.5, 4.75); windshield.rotation.x = -0.12;
+          g.add(windshield);
+          /* Rear window */
+          var rearWin = new THREE.Mesh(new THREE.BoxGeometry(2.8, 1.1, 0.1), glassMat);
+          rearWin.position.set(0, 0.5, -4.75);
+          g.add(rearWin);
+          /* Side windows + frames */
+          for (var side = -1; side <= 1; side += 2) {
+            for (var wi = 0; wi < 3; wi++) {
+              var win = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.9, 1.5), glassMat);
+              win.position.set(side * 1.72, 0.65, -2.2 + wi * 2.4);
+              g.add(win);
+            }
+            var ft = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 9.2), darkBody);
+            ft.position.set(side * 1.72, 1.15, 0); g.add(ft);
+            var fb = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 9.2), darkBody);
+            fb.position.set(side * 1.72, 0.15, 0); g.add(fb);
+            var df = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.8, 1.8), trimMat);
+            df.position.set(side * 1.73, 0.0, 1.5); g.add(df);
+          }
+          /* Gold stripes */
+          for (var s2 = -1; s2 <= 1; s2 += 2) {
+            var st = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.2, 9.3), trimMat);
+            st.position.set(s2 * 1.72, -0.35, 0); g.add(st);
+          }
+          /* Front bumper + lights */
+          var bumper = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.35, 0.4), rubber);
+          bumper.position.set(0, -1.1, 4.8); g.add(bumper);
+          for (var hl = -1; hl <= 1; hl += 2) {
+            var headlight = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.08), lightMat);
+            headlight.position.set(hl * 1.1, -0.5, 4.78); g.add(headlight);
+          }
+          for (var tl = -1; tl <= 1; tl += 2) {
+            var taillight = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.25, 0.08), tailLight);
+            taillight.position.set(tl * 1.1, -0.5, -4.78); g.add(taillight);
+          }
+          /* Wheels with hubcaps */
           for (var w2 = 0; w2 < 4; w2++) {
-            var wh = new THREE.Mesh(
-              new THREE.CylinderGeometry(0.62, 0.62, 0.5, 10),
-              dark,
-            );
-            wh.rotation.z = Math.PI / 2;
-            wh.position.set(w2 < 2 ? -1.7 : 1.7, -1.3, w2 % 2 === 0 ? -3 : 3);
-            g.add(wh);
+            var sideW = w2 < 2 ? -1 : 1, frontBack = w2 % 2 === 0 ? -2.8 : 2.8;
+            var wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 0.45, 12), rubber);
+            wheel.rotation.z = Math.PI / 2;
+            wheel.position.set(sideW * 1.8, -1.35, frontBack); wheel.castShadow = true;
+            g.add(wheel);
+            var hubcap = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.48, 8), trimMat);
+            hubcap.rotation.z = Math.PI / 2;
+            hubcap.position.set(sideW * 1.8, -1.35, frontBack);
+            g.add(hubcap);
           }
-          var balloon = new THREE.Mesh(
-            new THREE.SphereGeometry(6.4, 22, 18),
-            new THREE.MeshStandardMaterial({
-              color: col(0xe8556b),
-              roughness: 0.55,
-              metalness: 0.05,
-            }),
-          );
-          balloon.position.y = 11;
-          balloon.scale.set(1, 0.82, 1.15);
-          balloon.castShadow = true;
-          g.add(balloon);
+          /* Balloon with ribs and stripes */
+          var balloonGroup = new THREE.Group();
+          var balloonGeo = new THREE.SphereGeometry(6.8, 32, 26);
+          balloonGeo.scale(1, 0.82, 1.15);
+          var balloonMat2 = new THREE.MeshStandardMaterial({ color: col(0xe8556b), roughness: 0.5, metalness: 0.05 });
+          var balloonMesh = new THREE.Mesh(balloonGeo, balloonMat2);
+          balloonMesh.castShadow = true; balloonGroup.add(balloonMesh);
+          /* Vertical ribs */
+          for (var rib = 0; rib < 8; rib++) {
+            var angle = (rib / 8) * Math.PI * 2;
+            var ribCurve = new THREE.TorusGeometry(6.7, 0.06, 6, 24, Math.PI);
+            var ribMesh = new THREE.Mesh(ribCurve, trimMat);
+            ribMesh.rotation.y = angle; ribMesh.rotation.x = Math.PI / 2;
+            balloonGroup.add(ribMesh);
+          }
+          /* Horizontal stripes */
+          for (var sti = 0; sti < 3; sti++) {
+            var stGeo = new THREE.TorusGeometry(5.8 + sti * 0.9, 0.12, 6, 32);
+            var stMesh = new THREE.Mesh(stGeo, trimMat);
+            stMesh.position.y = -1.5 + sti * 2.0; stMesh.rotation.x = Math.PI / 2;
+            balloonGroup.add(stMesh);
+          }
+          /* Burner nozzle + fire glow */
+          var nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 0.8, 8), darkBody);
+          nozzle.position.y = -5.2; balloonGroup.add(nozzle);
+          var fireGlow = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 6), new THREE.MeshBasicMaterial({ color: col(0xff8800), transparent: true, opacity: 0.8 }));
+          fireGlow.position.y = -5.8; fireGlow.name = "fireGlow";
+          balloonGroup.add(fireGlow);
+          balloonGroup.position.y = 11;
+          g.add(balloonGroup);
+          BUS.balloon = balloonGroup;
+          /* Ropes */
           for (var r2 = 0; r2 < 4; r2++) {
-            var rope = new THREE.Mesh(
-              new THREE.CylinderGeometry(0.05, 0.05, 7, 4),
-              dark,
-            );
-            rope.position.set(
-              (r2 < 2 ? -1 : 1) * 1.2,
-              5.4,
-              r2 % 2 === 0 ? -1.8 : 1.8,
-            );
+            var ropeGeo = new THREE.CylinderGeometry(0.04, 0.04, 7.2, 4);
+            var rope = new THREE.Mesh(ropeGeo, rubber);
+            rope.position.set((r2 < 2 ? -1 : 1) * 1.3, 5.3, r2 % 2 === 0 ? -1.9 : 1.9);
             g.add(rope);
           }
-          /* propeller */
+          /* Propeller housing */
+          var propHousing = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.6), darkBody);
+          propHousing.position.set(0, 0, 4.9); g.add(propHousing);
+          /* Propeller */
           var prop = new THREE.Group();
           for (var p2 = 0; p2 < 3; p2++) {
-            var blade = new THREE.Mesh(
-              new THREE.BoxGeometry(0.16, 2.6, 0.06),
-              dark,
-            );
-            blade.rotation.z = (p2 * Math.PI * 2) / 3;
-            prop.add(blade);
+            var blade = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.8, 0.05), darkBody);
+            blade.position.z = 0.35; prop.add(blade);
           }
-          prop.position.set(0, 0, 4.8);
-          g.add(prop);
+          prop.position.set(0, 0, 5.15); g.add(prop);
           BUS.prop = prop;
           worldGroup.add(g);
           BUS.mesh = g;
-          BUS.balloon = balloon;
+          BUS.y = CFG.BUS_Y;
+          BUS.mesh.position.set(BUS.x, BUS.y, BUS.z);
         }
         function resetBus() {
           var a = rnd(0, 6.28);
@@ -418,7 +455,7 @@ import { GAMETIME } from './main.js';
           ch.y = BUS.y - 2.5;
           ch.vx = BUS.dx * CFG.BUS_SPEED * 0.7;
           ch.vz = BUS.dz * CFG.BUS_SPEED * 0.7;
-          ch.vy = -6;
+          ch.vy = -4;
           ch.glideLock = 0.55;
           ch.mesh.visible = true;
           if (ch.isPlayer) {
@@ -434,53 +471,85 @@ import { GAMETIME } from './main.js';
           ch.vy = Math.min(ch.vy, -6);
           if (!ch.gliderMesh) {
             var g = new THREE.Group();
-            var m = new THREE.MeshStandardMaterial({
+            /* Main canopy â€” semi-sphere shape */
+            var canopyGeo = new THREE.SphereGeometry(1.6, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+            var canopyMat = new THREE.MeshStandardMaterial({
               color: col(0x3fd0ff),
               roughness: 0.35,
-              metalness: 0.2,
+              metalness: 0.15,
               side: THREE.DoubleSide,
               emissive: col(0x0d5f8a),
-              emissiveIntensity: 0.4,
-            });
-            var m2 = new THREE.MeshStandardMaterial({
-              color: col(0xffd76a),
-              roughness: 0.4,
-              metalness: 0.2,
-              side: THREE.DoubleSide,
-              emissive: col(0x6a4a00),
               emissiveIntensity: 0.3,
             });
-            var w = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.12, 1.7), m);
-            w.position.set(0, 3.1, 0.15);
-            g.add(w);
-            var w2 = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.1, 1.2), m2);
-            w2.position.set(0, 3.2, -1.2);
-            g.add(w2);
-            var w3 = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.09, 0.9), m);
-            w3.position.set(0, 3.05, 1.3);
-            g.add(w3);
-            var pole = new THREE.Mesh(
-              new THREE.CylinderGeometry(0.06, 0.06, 1.7, 5),
-              new THREE.MeshStandardMaterial({ color: col(0x2b3038) }),
-            );
-            pole.position.set(0, 2.25, 0);
-            g.add(pole);
-            for (var i = -1; i <= 1; i += 2) {
-              var arm = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.045, 0.045, 1.7, 4),
-                new THREE.MeshStandardMaterial({ color: col(0x2b3038) }),
+            var canopy = new THREE.Mesh(canopyGeo, canopyMat);
+            canopy.position.y = 3.4;
+            canopy.castShadow = true;
+            g.add(canopy);
+            /* Center vent */
+            var ventGeo = new THREE.CylinderGeometry(0.25, 0.35, 0.15, 10, 1, true);
+            var ventMat = new THREE.MeshStandardMaterial({
+              color: col(0x1a3050),
+              side: THREE.DoubleSide,
+            });
+            var vent = new THREE.Mesh(ventGeo, ventMat);
+            vent.position.y = 4.95;
+            g.add(vent);
+            /* Stripes on canopy */
+            for (var si = 0; si < 4; si++) {
+              var stripeAngle = (si / 4) * Math.PI * 2;
+              var stripeGeo = new THREE.PlaneGeometry(0.15, 1.5);
+              var stripeMat = new THREE.MeshStandardMaterial({
+                color: col(0xffd76a),
+                side: THREE.DoubleSide,
+                emissive: col(0x6a4a00),
+                emissiveIntensity: 0.2,
+              });
+              var stripe = new THREE.Mesh(stripeGeo, stripeMat);
+              stripe.position.set(
+                Math.cos(stripeAngle) * 0.8,
+                3.8,
+                Math.sin(stripeAngle) * 0.8,
               );
-              arm.position.set(i * 0.95, 2.6, -0.2);
-              arm.rotation.z = i * 0.6;
-              g.add(arm);
-              var line = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.018, 0.018, 2.0, 3),
-                new THREE.MeshStandardMaterial({ color: col(0x1a1f28) }),
-              );
-              line.position.set(i * 0.7, 2.1, 0.1);
-              line.rotation.z = i * 0.35;
+              stripe.lookAt(0, 3.8, 0);
+              stripe.rotation.z = stripeAngle;
+              g.add(stripe);
+            }
+            /* Suspension lines to harness */
+            var lineMat = new THREE.MeshStandardMaterial({ color: col(0x2b3038) });
+            for (var i = 0; i < 8; i++) {
+              var angle = (i / 8) * Math.PI * 2;
+              var topX = Math.cos(angle) * 1.4;
+              var topZ = Math.sin(angle) * 1.4;
+              var botX = Math.cos(angle) * 0.5;
+              var botZ = Math.sin(angle) * 0.5;
+              var midY = 2.8;
+              var dx = botX - topX, dy = midY - 3.4, dz = botZ - topZ;
+              var len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+              var lineGeo = new THREE.CylinderGeometry(0.012, 0.012, len, 3);
+              var line = new THREE.Mesh(lineGeo, lineMat);
+              line.position.set((topX+botX)/2, (3.4+midY)/2, (topZ+botZ)/2);
+              line.lookAt(new THREE.Vector3(botX, midY, botZ));
+              line.rotateX(Math.PI/2);
               g.add(line);
             }
+            /* Harness / risers */
+            var harnessMat = new THREE.MeshStandardMaterial({ color: col(0x3a3a3a) });
+            for (var hi = -1; hi <= 1; hi += 2) {
+              var riser = new THREE.Mesh(
+                new THREE.BoxGeometry(0.08, 0.6, 0.25),
+                harnessMat,
+              );
+              riser.position.set(hi * 0.5, 2.3, 0);
+              g.add(riser);
+            }
+            /* Connecting bar */
+            var bar = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.04, 0.04, 1.2, 6),
+              harnessMat,
+            );
+            bar.rotation.z = Math.PI / 2;
+            bar.position.set(0, 2.0, 0);
+            g.add(bar);
             ch.mesh.add(g);
             ch.gliderMesh = g;
           }
@@ -499,3 +568,4 @@ export {
   computeNextCircle, updateStormVisual, updateStorm, updateBus,
   ejectFromBus, deployGlider
 };
+
