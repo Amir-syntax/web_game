@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const modules = ['core','gfx','world','build','combat','chars','ai','storm','drops','reboot','ui','main'];
+const modules = ['core','gfx','world','combat','chars','ai','storm','drops','reboot','ui','main'];
 let parts = [];
 
 for (const m of modules) {

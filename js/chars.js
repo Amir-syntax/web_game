@@ -8,8 +8,6 @@ import {
 import { scene, camera, worldGroup } from './gfx.js';
 import { terrainHeightAt, groundAt, groundInfo, surfaceAt, stepTopAt, collideXZ, raycastWorld, terrainSlope, MAT, POIS, ROADS, platHash, rampHash } from './world.js';
 import { WEAPONS, WMAT, damageChar, finishReload, updateUsing, updateAutoReload, fxSmoke, FX } from './combat.js';
-import { BUILD_MODE, BUILDS } from './build.js';
-import { BUS, ejectFromBus, deployGlider } from './storm.js';
 import { UI, Input } from './ui.js';
 import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
         /* ==== 50_chars.js ==== */
@@ -175,6 +173,69 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
           cone: new THREE.ConeGeometry(0.5, 1, 10),
         };
 
+        /* Procedural character textures. Built ONCE and shared by every rig --
+        25 characters x their own canvas would be a real memory cost for a
+        barely-visible detail. Both are authored grayscale-ish so the material's
+        own colour still tints them (map multiplies color). */
+        var CH_TEX = null;
+        function charTextures() {
+          if (CH_TEX) return CH_TEX;
+          /* cloth: a fine, low-contrast diagonal weave. The threads are deliberately
+             only ~10% lighter/darker than the ground so it reads as fabric texture
+             up close and dissolves into flat shading at combat distance. */
+          CH_TEX = {
+            cloth: makeTex(
+              128,
+              function (g, s) {
+                px(g, 0, 0, s, s, "#e6e9ee");
+                for (var y = 0; y < s; y += 4) {
+                  for (var x = 0; x < s; x += 4) {
+                    var v = 206 + ((rnd() * 34) | 0);
+                    px(g, x, y, 4, 4, "rgb(" + v + "," + v + "," + (v + 5) + ")");
+                  }
+                }
+                g.strokeStyle = "rgba(110,120,140,0.16)";
+                g.lineWidth = 1;
+                for (var d = -s; d < s; d += 6) {
+                  g.beginPath();
+                  g.moveTo(d, 0);
+                  g.lineTo(d + s, s);
+                  g.stroke();
+                }
+                g.strokeStyle = "rgba(255,255,255,0.10)";
+                for (var d2 = -s; d2 < s; d2 += 6) {
+                  g.beginPath();
+                  g.moveTo(d2 + 3, 0);
+                  g.lineTo(d2 + 3 + s, s);
+                  g.stroke();
+                }
+              },
+              6,
+            ),
+            /* skin: a mostly-even light ground with faint freckle/pore speckle and
+               soft blotching. Kept very subtle -- strong mottling would look like a
+               rash once it tiles across the hands and face. */
+            skin: makeTex(
+              128,
+              function (g, s) {
+                px(g, 0, 0, s, s, "#f4dcc8");
+                for (var i = 0; i < 1100; i++) {
+                  var x = rnd(0, s),
+                    y = rnd(0, s);
+                  var a = rnd(0.02, 0.09);
+                  if (rnd() < 0.55)
+                    g.fillStyle = "rgba(150,92,62," + a.toFixed(3) + ")";
+                  else g.fillStyle = "rgba(255,236,216," + a.toFixed(3) + ")";
+                  g.fillRect(x, y, rnd(1, 2.4), rnd(1, 2.4));
+                }
+              },
+              3,
+            ),
+          };
+          return CH_TEX;
+        }
+
+
         /* Hip height above the character's feet. The whole upper body is parented to
    a pivot at this height, so the animation can lean / twist / bob it without
    dragging the legs along. Shared by the rig builder and the animator. */
@@ -203,17 +264,28 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
             gearStyle = (idx >> 1) % 3,
             hasCape = idx % 5 === 0;
           var g = new THREE.Group();
+          var CT = charTextures();
           var suit = new THREE.MeshStandardMaterial({
             color: col(skin.suit),
-            roughness: 0.74,
+            roughness: 0.78,
+            metalness: 0.05,
+            map: CT.cloth,
           });
           var suit2 = new THREE.MeshStandardMaterial({
             color: col(skin.suit2),
-            roughness: 0.7,
+            roughness: 0.72,
+            metalness: 0.05,
+            map: CT.cloth,
           });
+          /* Skin gets a faint emissive tint of its own colour -- a cheap stand-in
+             for subsurface scattering that stops faces and hands from going dead
+             and clay-like in shadow. */
           var skinM = new THREE.MeshStandardMaterial({
             color: col(skin.skin),
-            roughness: 0.6,
+            roughness: 0.62,
+            map: CT.skin,
+            emissive: col(skin.skin),
+            emissiveIntensity: 0.06,
           });
           var dark = new THREE.MeshStandardMaterial({
             color: col(0x23262e),
@@ -227,20 +299,51 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
           });
           var hair = new THREE.MeshStandardMaterial({
             color: col(skin.hair),
-            roughness: 0.86,
+            roughness: 0.84,
           });
           var steel = new THREE.MeshStandardMaterial({
             color: col(0x9aa3ad),
-            metalness: 0.72,
-            roughness: 0.34,
+            metalness: 0.85,
+            roughness: 0.28,
           });
           var white = new THREE.MeshStandardMaterial({
             color: col(0xf2f4f8),
             roughness: 0.22,
           });
-          ch.mats3d = [suit, suit2, skinM, dark, acc, hair, steel, white];
+          /* --- eyes: the white is near-glossy (wet), the iris is a saturated
+             glassy disc, the pupil is black and shiny, and a tiny pure-white
+             specular dot sells the whole thing as a real eyeball. Iris colour is
+             picked deterministically per character so a lobby is not 25 identical
+             blue-eyed soldiers. */
+          var IRIS = [0x3f6fb8, 0x6a4a28, 0x3f7a52, 0x8a6a3a, 0x4a5f8a, 0x7a5a3a];
+          var irisCol = IRIS[(idx * 7 + 3) % IRIS.length];
+          var eyeW = new THREE.MeshStandardMaterial({
+            color: col(0xf4f6fa),
+            roughness: 0.18,
+            metalness: 0.0,
+          });
+          var irisM = new THREE.MeshStandardMaterial({
+            color: col(irisCol),
+            roughness: 0.28,
+            metalness: 0.1,
+            emissive: col(irisCol),
+            emissiveIntensity: 0.04,
+          });
+          var pupilM = new THREE.MeshStandardMaterial({
+            color: col(0x0a0c10),
+            roughness: 0.2,
+            metalness: 0.1,
+          });
+          var hiM = new THREE.MeshBasicMaterial({
+            color: col(0xffffff),
+          });
+          ch.mats3d = [
+            suit, suit2, skinM, dark, acc, hair, steel, white,
+            eyeW, irisM, pupilM,
+          ];
+          ch.eyeMats = [eyeW, irisM, pupilM, hiM];
           /* remember the intended glow so the hurt-flash can restore it instead of
-     permanently flattening the accent emissive to black */
+      permanently flattening the accent emissive to black */
           for (var mi = 0; mi < ch.mats3d.length; mi++) {
             var mm = ch.mats3d[mi];
             mm.userData.baseEm = mm.emissive
@@ -249,6 +352,7 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
             mm.userData.baseEmI =
               mm.emissiveIntensity === undefined ? 1 : mm.emissiveIntensity;
           }
+
 
           /* ---------------- torso / gear ----------------
      Everything above the hips hangs off a `body` pivot sitting at hip height,
@@ -577,58 +681,113 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
             0.07,
           ); /* ears */
           H.add(CH_GEO.box, skinM, 0.215, 0.12, 0, 0, 0, 0, 0.045, 0.1, 0.07);
+          /* --- eyes: white -> iris -> pupil -> specular catchlight, layered
+             front-to-back so the coloured iris reads as sitting INSIDE the eye. --- */
           H.add(
             CH_GEO.sph,
-            white,
+            eyeW,
             -0.078,
             0.145,
-            0.175,
+            0.17,
             0,
             0,
             0,
-            0.1,
-            0.085,
-            0.075,
-          ); /* eyes */
+            0.105,
+            0.09,
+            0.08,
+          ); /* left white */
           H.add(
             CH_GEO.sph,
-            white,
+            eyeW,
             0.078,
             0.145,
-            0.175,
+            0.17,
             0,
             0,
             0,
-            0.1,
-            0.085,
-            0.075,
-          );
+            0.105,
+            0.09,
+            0.08,
+          ); /* right white */
           H.add(
             CH_GEO.sph,
-            dark,
+            irisM,
             -0.078,
             0.145,
-            0.215,
+            0.216,
             0,
             0,
             0,
-            0.048,
-            0.048,
-            0.036,
-          ); /* pupils */
+            0.062,
+            0.062,
+            0.03,
+          ); /* left iris */
           H.add(
             CH_GEO.sph,
-            dark,
+            irisM,
             0.078,
             0.145,
-            0.215,
+            0.216,
             0,
             0,
             0,
-            0.048,
-            0.048,
-            0.036,
-          );
+            0.062,
+            0.062,
+            0.03,
+          ); /* right iris */
+          H.add(
+            CH_GEO.sph,
+            pupilM,
+            -0.078,
+            0.145,
+            0.23,
+            0,
+            0,
+            0,
+            0.032,
+            0.032,
+            0.02,
+          ); /* left pupil */
+          H.add(
+            CH_GEO.sph,
+            pupilM,
+            0.078,
+            0.145,
+            0.23,
+            0,
+            0,
+            0,
+            0.032,
+            0.032,
+            0.02,
+          ); /* right pupil */
+          H.add(
+            CH_GEO.sph,
+            hiM,
+            -0.092,
+            0.158,
+            0.238,
+            0,
+            0,
+            0,
+            0.02,
+            0.02,
+            0.012,
+          ); /* left catchlight */
+          H.add(
+            CH_GEO.sph,
+            hiM,
+            0.092,
+            0.158,
+            0.238,
+            0,
+            0,
+            0,
+            0.02,
+            0.02,
+            0.012,
+          ); /* right catchlight */
+
           H.add(
             CH_GEO.box,
             hair,
@@ -1267,7 +1426,6 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
             pitch: 0,
             health: 100,
             shield: 0,
-            mats: { wood: isPlayer ? 120 : rndi(70, 240), stone: 0, metal: 0 },
             ammo: { light: 0, medium: 0, heavy: 0, shell: 0, rocket: 0 },
             heals: {
               band: isPlayer ? 0 : rndi(0, 3),
@@ -1276,7 +1434,7 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
               pot: 0,
             },
             slots: [
-              { id: "pickaxe", rarity: 0, ammoInMag: 0 },
+              { id: "pistol", rarity: 0, ammoInMag: 16 },
               null,
               null,
               null,
@@ -1313,8 +1471,6 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
             knockAnim: 0,
             landAnim: 0,
             useAnim: 0,
-            swingT: 1e9,
-            swingDur: 1,
             lastStepSign: 0,
             mantle: null,
             mantleAnim: 0,
@@ -1684,19 +1840,25 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
           var hold = wdef ? wdef.hold : "axe";
           var gun = hold !== "axe";
           var hipY = CH_HIP;
+          /* headBobY is a small vertical offset the locomotion / idle branches write
+             further down. A real walker's gaze stays roughly level while the torso
+             bounces, so the head counter-bobs against the body; an idle character's
+             head rises and falls a hair with each breath. It is read here (one
+             frame behind, which is imperceptible) and each branch either sets it or
+             zeroes it, so no state ever inherits a stale offset. */
           /* The head rides on the torso pivot (so a lean carries it along and the
-     seated crouch pulls it down with the shoulders). Seated it tucks slightly
-     lower again so the tallest helmet still clears the car roof. Done up here
+      seated crouch pulls it down with the shoulders). Seated it tucks slightly
+      lower again so the tallest helmet still clears the car roof. Done up here
      so every branch below -- knocked, gliding, driving, on foot -- gets it. */
           if (L.head)
             L.head.position.y = damp(
               L.head.position.y,
-              ch.vehicle ? SEAT_HEAD : CH_HEAD,
+              (ch.vehicle ? SEAT_HEAD : CH_HEAD) + (ch.headBobY || 0),
               12,
               dt,
             );
           /* Weapons are stowed in a vehicle -- both because the hands are on the wheel
-     and because a held rifle/pickaxe is long enough to punch straight out
+      and because a held rifle is long enough to punch straight out
      through the roof. One line up here covers every branch below. */
           if (ch.weaponMesh) ch.weaponMesh.visible = !ch.vehicle;
 
@@ -1709,6 +1871,7 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
 
           /* ============================ DOWNED ================================== */
           if (ch.knocked) {
+            ch.headBobY = 0;
             var ks = Math.sin(ch.animT * 3.0);
             L.legL.hip.rotation.x = damp(
               L.legL.hip.rotation.x,
@@ -1776,6 +1939,7 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
 
           /* ======================= SKYDIVE / GLIDE ============================== */
           if (ch.state === "glide" || ch.state === "skydive") {
+            ch.headBobY = 0;
             var dive = ch.state === "skydive";
             var sway =
               Math.sin(ch.animT * (dive ? 3.0 : 1.5)) * (dive ? 0.05 : 0.1);
@@ -1902,81 +2066,8 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
           }
 
           /* ============================= DRIVING ================================ */
-          if (ch.vehicle || ch.state === "vehicle") {
-            var isBoat = !!(ch.vehicle && ch.vehicle.type === "boat");
-            var wob =
-              Math.sin(ch.animT * 7) *
-              0.02 *
-              clamp(Math.abs(ch.vehicle ? ch.vehicle.speed : 0) / 12, 0, 1);
-            /* Seated: thighs forward and level, shins tucked so the feet stay inside
-       the chassis, hands out on the wheel. The torso pivot drops 0.35 so the
-       head clears the roof -- the rig has a long torso and short legs, so
-       without this the character's head pokes straight through it. */
-            L.legL.hip.rotation.x = damp(L.legL.hip.rotation.x, -1.55, 9, dt);
-            L.legR.hip.rotation.x = damp(L.legR.hip.rotation.x, -1.55, 9, dt);
-            L.legL.knee.rotation.x = damp(L.legL.knee.rotation.x, 0.35, 9, dt);
-            L.legR.knee.rotation.x = damp(L.legR.knee.rotation.x, 0.35, 9, dt);
-            L.legL.foot.rotation.x = damp(L.legL.foot.rotation.x, 0.15, 9, dt);
-            L.legR.foot.rotation.x = damp(L.legR.foot.rotation.x, 0.15, 9, dt);
-            L.armL.shoulder.rotation.x = damp(
-              L.armL.shoulder.rotation.x,
-              -1.36 + wob,
-              8,
-              dt,
-            );
-            L.armR.shoulder.rotation.x = damp(
-              L.armR.shoulder.rotation.x,
-              -1.36 - wob,
-              8,
-              dt,
-            );
-            L.armL.shoulder.rotation.z = damp(
-              L.armL.shoulder.rotation.z,
-              0.4,
-              8,
-              dt,
-            );
-            L.armR.shoulder.rotation.z = damp(
-              L.armR.shoulder.rotation.z,
-              -0.4,
-              8,
-              dt,
-            );
-            L.armL.elbow.rotation.x = damp(
-              L.armL.elbow.rotation.x,
-              -0.95,
-              8,
-              dt,
-            );
-            L.armR.elbow.rotation.x = damp(
-              L.armR.elbow.rotation.x,
-              -0.95,
-              8,
-              dt,
-            );
-            L.head.rotation.x = damp(L.head.rotation.x, 0, 6, dt);
-            L.head.rotation.y = damp(L.head.rotation.y, 0, 6, dt);
-            if (T) {
-              T.position.y = damp(T.position.y, SEAT_PIVOT, 8, dt);
-              T.position.x = damp(T.position.x, 0, 8, dt);
-              T.rotation.x = damp(T.rotation.x, -0.06, 8, dt);
-              T.rotation.y = damp(T.rotation.y, 0, 8, dt);
-              T.rotation.z = damp(T.rotation.z, 0, 8, dt);
-            }
-            /* Drop the mesh so the seated PELVIS lands exactly on the vehicle's
-       cushion, rather than guessing an offset from ch.y -- the two used to
-       disagree by 0.38 and the driver's head poked out through the roof.
-       ch.y tracks v.y + 1.0 (car) / +0.9 (boat), which is not a seat. */
-            var vv = ch.vehicle;
-            var seatY = isBoat ? VEH_SEAT_BOAT : VEH_SEAT_CAR;
-            var base = vv && isFinite(vv.y) ? vv.y : ch.y - 1.0;
-            ch.mesh.position.y = base + seatY - SEAT_PELVIS;
-            ch.mesh.rotation.y = ch.yaw;
-            ch.mesh.rotation.x = damp(ch.mesh.rotation.x, 0, 7, dt);
-            ch.mesh.rotation.z = damp(ch.mesh.rotation.z, 0, 7, dt);
-            applyHurtFlash(ch, dt);
-            return;
-          }
+          // vehicle system removed
+
 
           /* ============================ ON FOOT ================================= */
           ch.mesh.rotation.x = damp(ch.mesh.rotation.x, 0, 7, dt);
@@ -1996,7 +2087,8 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
 
           if (!ch.grounded) {
             /* --- airborne: legs tuck on the way up, reach for the ground on the way
-       down; arms come out for balance --- */
+        down; arms come out for balance --- */
+            ch.headBobY = 0;
             var up = clamp(ch.vy / CFG.JUMP, 0, 1),
               dn = clamp(-ch.vy / 16, 0, 1);
             L.legL.hip.rotation.x = damp(
@@ -2134,16 +2226,27 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
               12,
               dt,
             );
-            /* body: two vertical bobs per stride, hips riding over the stance foot */
-            baseY += (Math.abs(c) - 0.42) * 0.075 * amt;
+            /* body: two vertical bobs per stride, hips riding over the stance foot.
+               The shape is right (up at mid-stance, down at heel-strike) but the
+               amplitude is pushed a little higher than a strict walk so the stride
+               actually reads at third-person distance. */
+            var bob = (Math.abs(c) - 0.42) * 0.095 * amt;
+            baseY += bob;
+            /* the head counter-bobs against the torso -- about half the body's
+               travel, never all of it, or the neck goes rigid and robotic */
+            ch.headBobY = -bob * 0.55;
             tx = s * 0.03 * amt;
             twist = s * 0.17 * amt;
             lean = 0.11 * amt + sprintF * 0.2;
             roll += -s * 0.045 * amt;
           } else {
-            /* --- idle: slow weight shift, breathing, head slightly alive --- */
+            /* --- idle: slow weight shift, breathing, head slightly alive ---
+               Breathing is amplitude-doubled and slowed a touch -- the old 0.022
+               shrugged so fast and so little it was invisible, and the chest never
+               moved at all. */
             var sh = Math.sin(ch.animT * 0.55),
-              br = Math.sin(ch.animT * 1.9) * 0.022;
+              br = Math.sin(ch.animT * 1.35) * 0.045;
+            ch.headBobY = br * 0.4;
             L.legL.hip.rotation.x = damp(
               L.legL.hip.rotation.x,
               sh * 0.05,
@@ -2294,20 +2397,6 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
               twist *= 0.35;
               roll *= 0.4;
             }
-          } else if (!gun) {
-            /* pickaxe: the left hand is free, so let the right arm hang naturally */
-            L.armR.shoulder.rotation.z = damp(
-              L.armR.shoulder.rotation.z,
-              -0.16,
-              8,
-              dt,
-            );
-            L.armR.elbow.rotation.x = damp(
-              L.armR.elbow.rotation.x,
-              -0.3,
-              8,
-              dt,
-            );
           }
 
           /* --- consuming a heal: the left hand comes up to the face --- */
@@ -2363,64 +2452,6 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
             lean -= rc * 0.05;
           }
           if (ch.bloom > 0) ch.bloom = Math.max(0, ch.bloom - dt * 4.5);
-
-          /* --- pickaxe / melee swing: wind up, chop, recover --------------------
-     Nothing used to animate the melee attack at all -- the pickaxe just sat
-     in the hand while the sound played. This drives the right arm through a
-     three-phase arc and counter-rotates the torso into the chop. */
-          if (ch.swingT < ch.swingDur) {
-            ch.swingT += dt;
-            var st = clamp(ch.swingT / Math.max(0.06, ch.swingDur), 0, 1);
-            var wx, wex, wsz, wtw, wln;
-            if (st < 0.3) {
-              /* wind up, twist away */
-              var q1 = smooth01(st / 0.3);
-              wx = lerp(-0.3, 0.64, q1);
-              wex = lerp(-0.3, -1.72, q1);
-              wsz = lerp(-0.16, -0.56, q1);
-              wtw = lerp(0, -0.36, q1);
-              wln = lerp(lean, -0.08, q1);
-            } else if (st < 0.58) {
-              /* the chop itself */
-              var q2 = smooth01((st - 0.3) / 0.28);
-              wx = lerp(0.64, -1.98, q2);
-              wex = lerp(-1.72, -0.1, q2);
-              wsz = lerp(-0.56, 0.18, q2);
-              wtw = lerp(-0.36, 0.34, q2);
-              wln = lerp(-0.08, 0.32, q2);
-            } else {
-              /* recover to the carry pose */
-              var q3 = smooth01((st - 0.58) / 0.42);
-              wx = lerp(-1.98, -0.55, q3);
-              wex = lerp(-0.1, -0.48, q3);
-              wsz = lerp(0.18, -0.16, q3);
-              wtw = lerp(0.34, 0, q3);
-              wln = lerp(0.32, 0, q3);
-            }
-            L.armR.shoulder.rotation.x = wx;
-            L.armR.shoulder.rotation.z = wsz;
-            L.armR.elbow.rotation.x = wex;
-            L.armL.shoulder.rotation.x = damp(
-              L.armL.shoulder.rotation.x,
-              -0.5,
-              10,
-              dt,
-            );
-            L.armL.shoulder.rotation.z = damp(
-              L.armL.shoulder.rotation.z,
-              0.28,
-              10,
-              dt,
-            );
-            L.armL.elbow.rotation.x = damp(
-              L.armL.elbow.rotation.x,
-              -0.55,
-              10,
-              dt,
-            );
-            twist = wtw;
-            lean = wln;
-          }
 
           /* --- mantle: both hands slam onto the lip, then the body swings up and
      over. `mantleAnim` runs 1 -> 0 across the climb, so the pose below is
@@ -2612,7 +2643,8 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
         /* ============================================================================
    Vehicles
    ========================================================================== */
-        var VEHICLES = [];
+        // VEHICLES removed
+        // VEHICLES removed
         var VMAT = null;
         function initVehicleMats() {
           if (VMAT) return;
@@ -2654,525 +2686,18 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
             }),
           };
         }
-        function makeCarMesh(colorHex) {
-          initVehicleMats();
-          var g = new THREE.Group();
-          var body = VMAT.body.clone();
-          body.color = col(colorHex);
-          function b(w, h, d, x, y, z, m) {
-            var q = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m || body);
-            q.position.set(x, y, z);
-            q.castShadow = true;
-            q.receiveShadow = true;
-            g.add(q);
-            return q;
-          }
-          b(2.0, 0.8, 4.4, 0, 0.8, 0);
-          /* Cabin as a shell (roof + pillars) rather than one solid block, so the
-     seated driver is actually visible through the glass instead of being
-     buried inside the bodywork. Merged into a single mesh so the extra pieces
-     cost one draw call rather than seven. Roof height comes from VEH_ROOF_CAR
-     so it is guaranteed to clear the seated rig (see the SEAT_* block). */
-          var cab = new PartBag(g);
-          cab.add(
-            CH_GEO.box,
-            body,
-            0,
-            VEH_ROOF_CAR + 0.06,
-            -0.25,
-            0,
-            0,
-            0,
-            1.86,
-            0.12,
-            2.24,
-          ); /* roof */
-          cab.add(
-            CH_GEO.box,
-            body,
-            -0.86,
-            1.55,
-            0.78,
-            0,
-            0,
-            0,
-            0.14,
-            0.7,
-            0.16,
-          ); /* A pillars */
-          cab.add(CH_GEO.box, body, 0.86, 1.55, 0.78, 0, 0, 0, 0.14, 0.7, 0.16);
-          cab.add(
-            CH_GEO.box,
-            body,
-            -0.86,
-            1.55,
-            -1.28,
-            0,
-            0,
-            0,
-            0.14,
-            0.7,
-            0.16,
-          ); /* C pillars */
-          cab.add(
-            CH_GEO.box,
-            body,
-            0.86,
-            1.55,
-            -1.28,
-            0,
-            0,
-            0,
-            0.14,
-            0.7,
-            0.16,
-          );
-          cab.add(
-            CH_GEO.box,
-            body,
-            -0.86,
-            1.55,
-            -0.25,
-            0,
-            0,
-            0,
-            0.14,
-            0.68,
-            0.14,
-          ); /* B pillars */
-          cab.add(
-            CH_GEO.box,
-            body,
-            0.86,
-            1.55,
-            -0.25,
-            0,
-            0,
-            0,
-            0.14,
-            0.68,
-            0.14,
-          );
-          cab.flush();
-          b(1.7, 0.56, 0.12, 0, 1.58, 0.9, VMAT.glass);
-          b(1.7, 0.56, 0.12, 0, 1.58, -1.42, VMAT.glass);
-          b(0.12, 0.56, 1.9, -0.93, 1.58, -0.25, VMAT.glass);
-          b(0.12, 0.56, 1.9, 0.93, 1.58, -0.25, VMAT.glass);
-          b(1.9, 0.24, 4.5, 0, 0.42, 0, VMAT.dark);
-          /* seat cushion the driver actually sits on -- top must equal VEH_SEAT_CAR */
-          b(0.78, 0.18, 0.74, 0, VEH_SEAT_CAR - 0.09, -0.1, VMAT.dark);
-          b(0.78, 0.46, 0.14, 0, VEH_SEAT_CAR + 0.16, -0.44, VMAT.dark);
-          b(1.96, 0.16, 0.5, 0, 0.66, 2.24, VMAT.dark);
-          b(1.96, 0.16, 0.5, 0, 0.66, -2.24, VMAT.dark);
-          b(0.5, 0.22, 0.12, -0.66, 0.98, 2.3, VMAT.lamp);
-          b(0.5, 0.22, 0.12, 0.66, 0.98, 2.3, VMAT.lamp);
-          b(0.5, 0.18, 0.1, -0.66, 0.98, -2.3, VMAT.dark);
-          b(0.5, 0.18, 0.1, 0.66, 0.98, -2.3, VMAT.dark);
-          var wheels = [];
-          var wg = new THREE.CylinderGeometry(0.46, 0.46, 0.34, 14);
-          wg.rotateZ(Math.PI / 2);
-          var rg = new THREE.CylinderGeometry(0.24, 0.24, 0.36, 10);
-          rg.rotateZ(Math.PI / 2);
-          var pos = [
-            [-1.02, 1.42],
-            [1.02, 1.42],
-            [-1.02, -1.42],
-            [1.02, -1.42],
-          ];
-          for (var i = 0; i < 4; i++) {
-            var w = new THREE.Mesh(wg, VMAT.tyre);
-            w.position.set(pos[i][0], 0.46, pos[i][1]);
-            w.castShadow = true;
-            g.add(w);
-            var r = new THREE.Mesh(rg, VMAT.rim);
-            r.position.copy(w.position);
-            r.castShadow = false;
-            g.add(r);
-            wheels.push(w);
-          }
-          return { group: g, wheels: wheels, lamp: null };
-        }
-        function makeBoatMesh() {
-          initVehicleMats();
-          var g = new THREE.Group();
-          function b(w, h, d, x, y, z, m) {
-            var q = new THREE.Mesh(
-              new THREE.BoxGeometry(w, h, d),
-              m || VMAT.hull,
-            );
-            q.position.set(x, y, z);
-            q.castShadow = true;
-            q.receiveShadow = true;
-            g.add(q);
-            return q;
-          }
-          b(2.4, 0.7, 5.0, 0, 0.5, 0);
-          b(2.0, 0.5, 4.6, 0, 0.95, -0.1, VMAT.dark);
-          b(1.5, 0.5, 1.2, 0, 1.3, 1.1, VMAT.hull);
-          b(1.6, 0.5, 0.3, 0, 1.3, -2.1, VMAT.hull);
-          b(0.9, 0.6, 0.7, 0, 1.2, -2.6, VMAT.dark);
-          var p = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.08, 0.08, 1.5, 6),
-            VMAT.rim,
-          );
-          p.position.set(0, 1.75, -2.9);
-          g.add(p);
-          return { group: g, wheels: [], lamp: null };
-        }
-        function createVehicles() {
-          initVehicleMats();
-          var spots = [];
-          /* a few by each POI, a few along roads */
-          for (var i = 0; i < POIS.length; i++) {
-            var p = POIS[i];
-            var n = p.f === poiAirfield ? 2 : 1;
-            for (var k = 0; k < n; k++) {
-              var a = rnd(0, 6.28),
-                r = p.r * rnd(0.55, 0.95);
-              var x = p.x + Math.cos(a) * r,
-                z = p.z + Math.sin(a) * r;
-              if (terrainHeightAt(x, z) < CFG.SEA + 1.4) continue;
-              spots.push({ x: x, z: z });
-            }
-          }
-          for (var r2 = 0; r2 < ROADS.length; r2 += 2) {
-            var A = POIS[ROADS[r2][0]],
-              B = POIS[ROADS[r2][1]];
-            if (!A || !B) continue;
-            var t = rnd(0.25, 0.75);
-            var x2 = A.x + (B.x - A.x) * t,
-              z2 = A.z + (B.z - A.z) * t;
-            var nx = -(B.z - A.z),
-              nz = B.x - A.x;
-            var nl = Math.sqrt(nx * nx + nz * nz) || 1;
-            x2 += (nx / nl) * rnd(5, 8);
-            z2 += (nz / nl) * rnd(5, 8);
-            if (terrainHeightAt(x2, z2) > CFG.SEA + 1.2)
-              spots.push({ x: x2, z: z2 });
-          }
-          var colors = [
-            0x3f7fd6, 0xd6d6d6, 0xc23b3b, 0x2f2f2f, 0x2fae6a, 0xffd23f,
-            0x8a4fd0, 0xe8e2d0,
-          ];
-          for (var s = 0; s < spots.length; s++) {
-            var sp = spots[s];
-            var y = terrainHeightAt(sp.x, sp.z);
-            var mk = makeCarMesh(pickOne(colors));
-            mk.group.position.set(sp.x, y, sp.z);
-            mk.group.rotation.y = rnd(0, 6.28);
-            worldGroup.add(mk.group);
-            VEHICLES.push({
-              type: "car",
-              mesh: mk.group,
-              wheels: mk.wheels,
-              x: sp.x,
-              y: y,
-              z: sp.z,
-              yaw: mk.group.rotation.y,
-              speed: 0,
-              vy: 0,
-              driver: null,
-              boost: 1,
-              hp: 600,
-              wheelSpin: 0,
-              radius: 1.5,
-              len: 2.4,
-              hover: 0,
-              /* AABB collider for world collision */
-              col: {
-                minX: sp.x - 1.8, maxX: sp.x + 1.8,
-                minY: y - 0.5, maxY: y + 2.2,
-                minZ: sp.z - 1.3, maxZ: sp.z + 1.3,
-              },
-            });
-            colliders.insert(VEHICLES[VEHICLES.length - 1].col);
-          }
-          /* boats near the shoreline */
-          var made = 0,
-            tries = 0;
-          while (made < 7 && tries < 600) {
-            tries++;
-            var a2 = rnd(0, 6.28),
-              r3 = rnd(232, 262);
-            var bx = Math.cos(a2) * r3,
-              bz = Math.sin(a2) * r3;
-            if (terrainHeightAt(bx, bz) > CFG.SEA - 1.2) continue;
-            var bm = makeBoatMesh();
-            bm.group.position.set(bx, CFG.SEA - 0.35, bz);
-            bm.group.rotation.y = rnd(0, 6.28);
-            worldGroup.add(bm.group);
-            VEHICLES.push({
-              type: "boat",
-              mesh: bm.group,
-              wheels: [],
-              x: bx,
-              y: CFG.SEA - 0.35,
-              z: bz,
-              yaw: bm.group.rotation.y,
-              speed: 0,
-              vy: 0,
-              driver: null,
-              boost: 1,
-              hp: 500,
-              wheelSpin: 0,
-              radius: 1.4,
-              len: 2.2,
-              hover: 0,
-              col: {
-                minX: bx - 1.6, maxX: bx + 1.6,
-                minY: CFG.SEA - 0.8, maxY: CFG.SEA + 1.2,
-                minZ: bz - 1.2, maxZ: bz + 1.2,
-              },
-            });
-            colliders.insert(VEHICLES[VEHICLES.length - 1].col);
-            made++;
-          }
-        }
-        function updateVehicles(dt) {
-          for (var i = 0; i < VEHICLES.length; i++) {
-            var v = VEHICLES[i];
-            var thr = 0,
-              steer = 0,
-              boost = false;
-            if (v.driver) {
-              var d = v.driver;
-              thr = d.vehThrottle || 0;
-              steer = d.vehSteer || 0;
-              boost = !!d.vehBoost;
-            }
-            var isBoat = v.type === "boat";
-            var maxSpd = isBoat ? 26 : CFG.VEH_MAX;
-            if (boost) maxSpd *= 1.42;
-            var accel = isBoat ? 16 : 22;
-            v.speed += thr * accel * dt;
-            if (thr === 0) v.speed *= Math.exp(-(isBoat ? 1.1 : 1.6) * dt);
-            v.speed = clamp(v.speed, -maxSpd * 0.45, maxSpd);
-            var steerRate =
-              clamp(Math.abs(v.speed) / 9, 0, 1.15) * (isBoat ? 1.9 : 1.55);
-            /* Yaw is measured so that forward=(sin yaw, cos yaw); increasing yaw swings
-       forward from +Z toward +X, and +X is the driver's LEFT (the camera's right
-       vector is (-cos yaw, sin yaw)). So positive steer must DECREASE yaw for D
-       to turn right. */
-            v.yaw -= steer * steerRate * dt * Math.sign(v.speed >= 0 ? 1 : -1);
-            /* Camera-steering assist: while the player holds throttle without touching
-       A/D, gently ease the chassis toward the free-look direction so the mouse
-       is a meaningful driving input instead of pure decoration. */
-            if (
-              v.driver &&
-              v.driver.isPlayer &&
-              thr > 0.1 &&
-              Math.abs(steer) < 0.1 &&
-              Math.abs(v.speed) > 2.5
-            ) {
-              var camK = Math.min(1, Math.abs(v.speed) / 16) * 1.6;
-              v.yaw += angDiff(v.yaw, v.driver.yaw) * Math.min(camK * dt, 0.35);
-            }
-            var fx = Math.sin(v.yaw),
-              fz = Math.cos(v.yaw);
-            var nx = v.x + fx * v.speed * dt,
-              nz = v.z + fz * v.speed * dt;
-            /* collide with the world */
-            var p = { x: nx, z: nz };
-            collideXZ(p, v.radius, v.y + 0.2, v.y + 1.6);
-            /* also check platforms and ramps */
-            var hw = v.radius, hl = v.len / 2;
-            var cosV = Math.cos(v.yaw), sinV = Math.sin(v.yaw);
-            var vMinX = 1e9, vMaxX = -1e9, vMinZ = 1e9, vMaxZ = -1e9;
-            var vpts = [[hl,hw],[-hl,hw],[hl,-hw],[-hl,-hw]];
-            for (var vi = 0; vi < vpts.length; vi++) {
-              var vx = nx + vpts[vi][0] * cosV - vpts[vi][1] * sinV;
-              var vz = nz + vpts[vi][0] * sinV + vpts[vi][1] * cosV;
-              if (vx < vMinX) vMinX = vx; if (vx > vMaxX) vMaxX = vx;
-              if (vz < vMinZ) vMinZ = vz; if (vz > vMaxZ) vMaxZ = vz;
-            }
-            var vBotY = v.y - 0.5;
-            /* Check platforms */
-            if (platHash) {
-              var platCandidates = [];
-              platHash.query(nx, nz, platCandidates);
-              for (var pi = 0; pi < platCandidates.length; pi++) {
-                var pl = platCandidates[pi];
-                if (pl.dead) continue;
-                if (vMaxX < pl.minX || vMinX > pl.maxX || vMaxZ < pl.minZ || vMinZ > pl.maxZ) continue;
-                if (vBotY < pl.maxY && v.y + 2.5 > pl.minY) {
-                  p.x = nx; p.z = nz; v.speed = 0; break;
-                }
-              }
-            }
-            /* Check ramps */
-            if (!v.driver || !v.driver.isPlayer || v.speed <= 0) {
-              if (rampHash) {
-                var rampCandidates = [];
-                rampHash.query(nx, nz, rampCandidates);
-                for (var ri = 0; ri < rampCandidates.length; ri++) {
-                  var rm = rampCandidates[ri];
-                  if (rm.dead) continue;
-                  if (vMaxX < rm.minX || vMinX > rm.maxX || vMaxZ < rm.minZ || vMinZ > rm.maxZ) continue;
-                  if (vBotY < rm.maxY && v.y + 2.5 > rm.minY) {
-                    p.x = nx; p.z = nz; v.speed = 0;
-                  }
-                }
-              }
-            }
-            if (Math.abs(p.x - nx) > 0.01 || Math.abs(p.z - nz) > 0.01) {
-              if (Math.abs(v.speed) > 10)
-                fxDebris(v.x, v.y + 0.8, v.z, "metal", 5);
-              v.speed *= 0.24;
-              if (v.driver && v.driver.isPlayer)
-                FX.shake = Math.min(0.8, FX.shake + 0.35);
-            }
-            v.x = p.x;
-            v.z = p.z;
-            /* update vehicle AABB collider */
-            if (v.col) {
-              var hlen = v.len / 2, hwid = v.radius;
-              var cosY = Math.cos(v.yaw), sinY = Math.sin(v.yaw);
-              var cx = v.x, cz = v.z;
-              var minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
-              var pts = [
-                [hlen, hwid], [-hlen, hwid], [hlen, -hwid], [-hlen, -hwid]
-              ];
-              for (var pi = 0; pi < pts.length; pi++) {
-                var rx = cx + pts[pi][0] * cosY - pts[pi][1] * sinY;
-                var rz = cz + pts[pi][0] * sinY + pts[pi][1] * cosY;
-                if (rx < minX) minX = rx; if (rx > maxX) maxX = rx;
-                if (rz < minZ) minZ = rz; if (rz > maxZ) maxZ = rz;
-              }
-              v.col.minX = minX; v.col.maxX = maxX;
-              v.col.minZ = minZ; v.col.maxZ = maxZ;
-              v.col.minY = v.y - 0.5; v.col.maxY = v.y + (isBoat ? 1.2 : 2.2);
-            }
-            /* follow the ground */
-            if (isBoat) {
-              var depth = CFG.SEA - terrainHeightAt(v.x, v.z);
-              if (depth < 0.4) {
-                v.speed *= Math.exp(-4 * dt);
-              }
-              v.y = lerp(
-                v.y,
-                CFG.SEA - 0.35 + Math.sin(GAMETIME * 2.4) * 0.06,
-                0.2,
-              );
-            } else {
-              var fy = terrainHeightAt(v.x + fx * 1.6, v.z + fz * 1.6);
-              var ry2 = terrainHeightAt(v.x - fx * 1.6, v.z - fz * 1.6);
-              var ly = terrainHeightAt(v.x - fz * 1.0, v.z + fx * 1.0);
-              var ry3 = terrainHeightAt(v.x + fz * 1.0, v.z - fx * 1.0);
-              var target = (fy + ry2 + ly + ry3) / 4;
-              v.y = lerp(v.y, target, 1 - Math.exp(-9 * dt));
-              var pitch = Math.atan2(ry2 - fy, 3.2);
-              var roll = Math.atan2(ry3 - ly, 2.0);
-              v.mesh.rotation.x = lerp(v.mesh.rotation.x, pitch, 0.14);
-              v.mesh.rotation.z = lerp(v.mesh.rotation.z, roll, 0.14);
-            }
-            v.mesh.position.set(v.x, v.y, v.z);
-            v.mesh.rotation.y = v.yaw;
-            v.wheelSpin += v.speed * dt * 2.1;
-            for (var w = 0; w < v.wheels.length; w++)
-              v.wheels[w].rotation.x = -v.wheelSpin;
-            /* run over players */
-            if (Math.abs(v.speed) > 7) {
-              for (var c = 0; c < CHARS.length; c++) {
-                var ch = CHARS[c];
-                if (!ch.alive || ch.onBus || ch.vehicle === v) continue;
-                if (
-                  dist2(ch.x, ch.z, v.x, v.z) < v.radius + 0.7 &&
-                  Math.abs(ch.y - v.y) < 2.0
-                ) {
-                  damageChar(ch, 26, v.driver, false, { cls: "vehicle" });
-                  ch.vx += fx * v.speed * 0.6;
-                  ch.vz += fz * v.speed * 0.6;
-                  ch.vy = 6;
-                }
-              }
-            }
-            /* engine audio for the driver */
-            if (v.driver && v.driver.isPlayer) {
-              Sfx.setEngine(
-                clamp(Math.abs(v.speed) / maxSpd, 0, 1) * 0.9 +
-                  (thr !== 0 ? 0.2 : 0),
-              );
-            }
-            if (v.driver) {
-              v.driver.x = v.x;
-              v.driver.z = v.z;
-              v.driver.y = v.y + (v.type === "boat" ? 0.9 : 1.0);
-              v.driver.vx = v.vx || 0;
-              v.driver.vz = 0;
-              v.driver.vy = 0;
-              /* NEVER stomp the player's yaw here: it is the free-look camera yaw and is
-         driven by the mouse. Overwriting it welded the camera to the car heading
-         and made the mouse appear completely dead while driving. Bots keep the
-         old behaviour since their yaw is their facing direction. */
-              if (!v.driver.isPlayer) v.driver.yaw = v.yaw;
-              v.driver.grounded = true;
-            }
-          }
-        }
-        function nearestVehicle(ch) {
-          var best = null,
-            bd = 4.2;
-          for (var i = 0; i < VEHICLES.length; i++) {
-            var v = VEHICLES[i];
-            if (v.driver) continue;
-            var d = dist2(ch.x, ch.z, v.x, v.z);
-            if (d < bd && Math.abs(v.y - ch.y) < 3) {
-              bd = d;
-              best = v;
-            }
-          }
-          return best;
-        }
-        function enterVehicle(ch, v) {
-          if (!v || v.driver) return false;
-          ch.vehicle = v;
-          v.driver = ch;
-          ch.state = "vehicle";
-          ch.vx = 0;
-          ch.vz = 0;
-          ch.vy = 0;
-          ch.mantle = null;
-          ch.mantleAnim = 0;
-          /* Sync character position to vehicle seat so they don't fall through */
-          var seatY = v.type === "boat" ? VEH_SEAT_BOAT : VEH_SEAT_CAR;
-          ch.x = v.x;
-          ch.z = v.z;
-          ch.y = v.y + seatY - SEAT_PELVIS;
-          ch.mesh.visible = true;
-          if (ch.isPlayer) {
-            Sfx.vehicle(true);
-            Sfx.setEngine(0.15);
-            UI.showVeh(true);
-          }
-          return true;
-        }
-        function exitVehicle(ch, silent) {
-          var v = ch.vehicle;
-          if (!v) return;
-          v.driver = null;
-          ch.vehicle = null;
-          ch.state = "ground";
-          var fx = Math.sin(v.yaw),
-            fz = Math.cos(v.yaw);
-          var px = v.x - fz * 2.4,
-            pz = v.z + fx * 2.4;
-          var gy = groundAt(px, pz, v.y + 3);
-          ch.x = px;
-          ch.z = pz;
-          ch.y = gy + 0.2;
-          ch.vx = 0;
-          ch.vz = 0;
-          ch.vy = 0;
-          if (ch.isPlayer && !silent) {
-            Sfx.vehicle(false);
-            UI.showVeh(false);
-          }
-          if (ch.isPlayer) {
-            ch.vehThrottle = 0;
-            ch.vehSteer = 0;
-            ch.vehBoost = false;
-          }
-        }
+        // makeCarMesh/BoatMesh removed
+        // makeBoatMesh removed
+        function createVehicles() {}
+
+        function updateVehicles(dt) {}
+
+        function nearestVehicle(ch) { return null; }
+
+        function enterVehicle(ch, v) { return false; }
+
+        function exitVehicle(ch, silent) { ch.vehicle = null; ch.state = "ground"; }
+
 
         /* ============================================================================
    Player
@@ -3181,7 +2706,6 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
           PC = createChar("YOU", true, 0, 0);
           PC.health = 100;
           PC.shield = 0;
-          PC.mats = { wood: 120, stone: 0, metal: 0 };
           return PC;
         }
         function updatePlayer(dt) {
@@ -3381,10 +2905,10 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
             );
             return;
           }
-          var aiming = PC.alive && Input.aim && !BUILD_MODE && !PC.knocked;
+          var aiming = PC.alive && Input.aim && !PC.knocked;
           var w = PC.slots[PC.slot];
           var scoped = aiming && w && WEAPONS[w.id].scope;
-          var dist = BUILD_MODE ? 6.4 : scoped ? 2.0 : aiming ? 2.6 : 4.5;
+          var dist = scoped ? 2.0 : aiming ? 2.6 : 4.5;
           var height = ch.knocked ? 0.75 : 1.54;
           var yaw = PC.alive ? ch.yaw : PC.yaw;
           var pitch = PC.alive ? ch.pitch : PC.pitch;
@@ -3502,12 +3026,9 @@ import { GAMETIME, MODE, SPECTATE_TARGET } from './main.js';
 
 export {
   CHARS, PC, CAM, CH_GEO, CH_HEAD, CH_HIP,
-  SEAT_PIVOT, SEAT_PELVIS, SEAT_HEAD, VEH_SEAT_CAR, VEH_SEAT_BOAT, VEH_ROOF_CAR,
-  SKIN_PALETTE, VEHICLES, VMAT,
-  initVehicleMats, createChar, buildCharMesh, createPlayer, createVehicles,
-  updateVehicles, enterVehicle, exitVehicle, nearestVehicle,
-  moveChar, animateChar, poseChar, animateDeath, syncChar,
+  SEAT_PIVOT, SEAT_PELVIS, SEAT_HEAD, SKIN_PALETTE, createChar, buildCharMesh, createPlayer, moveChar, animateChar, poseChar, animateDeath, syncChar,
   updatePlayer, updateCamera, applyHurtFlash, restoreCharEmissive, aimWeapon,
   MANTLE_MAX, MANTLE_TIME, STEP_UP, HOLD_POSE, attachWeapon
 };
+
 

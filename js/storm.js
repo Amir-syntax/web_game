@@ -1,4 +1,4 @@
-﻿import {
+import {
   CFG, SETTINGS, clamp, lerp, smoothstep, dist2, angDiff, approachAngle, fmtTime, expDecay,
   srnd, rnd, rndi, pickOne, chance, col, hexStr,
   hash2i, vnoise, fbm, ridged, makeTex, px, TEX, buildTextures,
@@ -13,17 +13,17 @@ import { UI } from './ui.js';
 import { GAMETIME } from './main.js';
         /* ==== 70_storm.js ==== */
         /* ============================================================================
-   70_STORM â€” the shrinking circle, its volumetric wall shader, lightning,
+   70_STORM — the shrinking circle, its volumetric wall shader, lightning,
    the battle bus and the skydive / glider descent.
    ========================================================================== */
 
         var STORM_PHASES = [
-          { wait: 55, shrink: 44, r: 170, dmg: 1 },
-          { wait: 40, shrink: 36, r: 118, dmg: 2 },
-          { wait: 34, shrink: 32, r: 76, dmg: 5 },
-          { wait: 30, shrink: 28, r: 44, dmg: 8 },
-          { wait: 26, shrink: 24, r: 21, dmg: 10 },
-          { wait: 24, shrink: 22, r: 7, dmg: 12 },
+          { wait: 55, shrink: 44, r: 205, dmg: 1 },
+          { wait: 40, shrink: 36, r: 140, dmg: 2 },
+          { wait: 34, shrink: 32, r: 90, dmg: 5 },
+          { wait: 30, shrink: 28, r: 52, dmg: 8 },
+          { wait: 26, shrink: 24, r: 25, dmg: 10 },
+          { wait: 24, shrink: 22, r: 8, dmg: 12 },
         ];
         var STORM = {
           phase: 0,
@@ -134,8 +134,8 @@ import { GAMETIME } from './main.js';
           var maxOff = Math.max(0, STORM.r - nr) * 0.78;
           var a = rnd(0, 6.28),
             d = rnd(0.15, 1) * maxOff;
-          STORM.nx = clamp(STORM.cx + Math.cos(a) * d, -152, 152);
-          STORM.nz = clamp(STORM.cz + Math.sin(a) * d, -152, 152);
+          STORM.nx = clamp(STORM.cx + Math.cos(a) * d, -185, 185);
+          STORM.nz = clamp(STORM.cz + Math.sin(a) * d, -185, 185);
           STORM.nr = nr;
         }
         function updateStormVisual() {
@@ -235,7 +235,7 @@ import { GAMETIME } from './main.js';
                 c.state === "glide"
               )
                 continue;
-              if (c.vehicle) continue;
+              // vehicle check removed
               if (dist2(c.x, c.z, STORM.cx, STORM.cz) > STORM.r) {
                 c.shield = Math.max(0, c.shield - STORM.dmg * 0.5);
                 c.health -= STORM.dmg;
@@ -471,7 +471,7 @@ import { GAMETIME } from './main.js';
           ch.vy = Math.min(ch.vy, -6);
           if (!ch.gliderMesh) {
             var g = new THREE.Group();
-            /* Main canopy â€” semi-sphere shape */
+            /* Main canopy — semi-sphere shape */
             var canopyGeo = new THREE.SphereGeometry(1.6, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
             var canopyMat = new THREE.MeshStandardMaterial({
               color: col(0x3fd0ff),

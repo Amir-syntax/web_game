@@ -6,9 +6,9 @@ import { terrainHeightAt, terrainSlope, blockedAt } from './world.js';
    ========================================================================== */
 
         var CFG = {
-          MAP: 640,
+          MAP: 760,
           SEG: 200,
-          PLAY_R: 168,
+          PLAY_R: 205,
           SEA: 0,
           GRID: 4,
           MAXP: 25,
@@ -23,9 +23,7 @@ import { terrainHeightAt, terrainSlope, blockedAt } from './world.js';
            DIVE: 55,
            GLIDE: 7,
            GLIDE_FWD: 18,
-          HARVEST_RANGE: 3.8,
-          BUILD_RANGE: 4.8,
-          VEH_MAX: 30,
+           VEH_MAX: 30,
           KNOCK_DRAIN: 2.4,
         };
 
@@ -1541,37 +1539,6 @@ import { terrainHeightAt, terrainSlope, blockedAt } from './world.js';
           shieldHit: function () {
             this.tone(1300, 1900, 0.08, "sine", 0.16);
             this.noise(0.1, 2600, 900, 1, 0.16, "bandpass");
-          },
-          build: function () {
-            this.tone(420, 640, 0.07, "triangle", 0.17);
-            this.noise(0.09, 1500, 520, 1, 0.17, "bandpass");
-          },
-          edit: function () {
-            this.tone(700, 1100, 0.06, "square", 0.14);
-            this.noise(0.07, 2200, 900, 1, 0.14, "bandpass");
-          },
-          repair: function () {
-            this.tone(500, 900, 0.1, "triangle", 0.15);
-            this.tone(760, 1200, 0.1, "sine", 0.1, 0.08);
-          },
-          break: function () {
-            this.noise(0.24, 1800, 220, 1, 0.32, "lowpass");
-            this.noise(0.4, 900, 180, 1, 0.14, "lowpass", 0.05);
-          },
-          swing: function () {
-            this.noise(0.16, 900, 260, 1, 0.16, "bandpass");
-          },
-          harvest: function (kind) {
-            if (kind === "stone") {
-              this.tone(240, 150, 0.1, "square", 0.15);
-              this.noise(0.12, 1200, 300, 1, 0.2, "bandpass");
-            } else if (kind === "metal") {
-              this.tone(900, 500, 0.14, "triangle", 0.16);
-              this.noise(0.14, 2600, 900, 1, 0.18, "bandpass");
-            } else {
-              this.tone(180, 110, 0.12, "sawtooth", 0.15);
-              this.noise(0.14, 900, 240, 1, 0.22, "lowpass");
-            }
           },
           pickup: function () {
             this.tone(700, 1250, 0.11, "triangle", 0.2);

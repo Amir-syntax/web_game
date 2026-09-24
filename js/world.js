@@ -63,8 +63,8 @@ import { buildRebootVans } from './reboot.js';
           /* cliff bands for dramatic verticality */
           base += Math.abs(Math.sin(nePeak * Math.PI * 2.5)) * neFactor * 12;
 
-          /* ---- volcanic peak at (-130, -130) ---- */
-          var volD = Math.sqrt((x + 130) * (x + 130) + (z + 130) * (z + 130));
+          /* ---- volcanic peak in the far NW corner ---- */
+          var volD = Math.sqrt((x + 160) * (x + 160) + (z + 150) * (z + 150));
           var vol = smoothstep(110, 15, volD);
           var volRidge = ridged(x * 0.02 + 1, z * 0.02 + 1, 5);
           base += vol * (volRidge * 40 + 18);
@@ -89,15 +89,15 @@ import { buildRebootVans } from './reboot.js';
           base += smoothstep(0.42, 0.95, ridge) * 20;
 
           /* ---- island rim (cliff at edges) ---- */
-          var rim = smoothstep(150, 238, d);
+          var rim = smoothstep(178, 290, d);
           base = lerp(base, 82 + fbm(x * 0.011 + 2, z * 0.011 + 7, 2) * 26, rim);
           /* steep cliff face */
-          if (d > 160 && d < 210) {
-            var cliff = smoothstep(160, 190, d) * (1 - smoothstep(190, 220, d));
+          if (d > 188 && d < 255) {
+            var cliff = smoothstep(188, 218, d) * (1 - smoothstep(218, 248, d));
             base += cliff * 35;
           }
           /* sea (flat ocean floor beyond rim) */
-          var sea = smoothstep(252, 302, d);
+          var sea = smoothstep(305, 365, d);
           base = lerp(base, -11, sea);
           return base;
         }
@@ -287,7 +287,7 @@ import { buildRebootVans } from './reboot.js';
           }
           return top;
         }
-        /* what are we standing on? drives footstep audio + harvest feedback */
+        /* what are we standing on? drives footstep audio */
         function surfaceAt(x, z, feetY) {
           var gi = groundInfo(x, z, feetY);
           if (gi.mat) return gi.mat;
@@ -909,6 +909,19 @@ import { buildRebootVans } from './reboot.js';
             wallZ(gb, -w / 2, w / 2, y, d / 2, fh, 0.34, wallC, 0, 2.4, 2.0);
             wallX(gb, -d / 2, d / 2, y, -w / 2, fh, 0.34, wallC, 0, 2.4, 2.0);
             wallX(gb, -d / 2, d / 2, y, w / 2, fh, 0.34, wallC, 0, 2.4, 2.0);
+            /* interior stair from this floor to the one above — without it every
+       level above the ground floor was unreachable. Runs along the +z wall,
+       starting under the window so it does not clash with the door. */
+            if (f < floors - 1)
+              gb.ramp(
+                -w * 0.32,
+                d / 2 - 1.1,
+                y + 0.05,
+                w * 0.32,
+                d / 2 - 1.1,
+                y + fh - 0.05,
+                1.1,
+              );
             gb.add(
               0.5,
               fh,
@@ -1028,62 +1041,36 @@ import { buildRebootVans } from './reboot.js';
           var dx = x1 - x0,
             dz = z1 - z0,
             len = Math.sqrt(dx * dx + dz * dz),
-            n = Math.floor(len / 2.2),
+            n = Math.max(1, Math.floor(len / 2.2)),
             ang = Math.atan2(dx, dz);
+          /* Posts and rails follow the ground per-segment. A single full-length rail
+     placed at the midpoint height left rails floating up to ~76m below the posts
+     when a fence corner stood on the island rim cliff. */
+          var prevX = x0,
+            prevZ = z0,
+            prevY = gb.groundY(x0, z0);
           for (var i = 0; i <= n; i++) {
-            var t = i / n;
+            var t = n === 0 ? 0 : i / n;
             var px = x0 + dx * t,
-              pz = z0 + dz * t;
-            gb.add(
-              0.16,
-              1.2,
-              0.16,
-              px,
-              gb.groundY(px, pz) + 0.6,
-              pz,
-              c,
-              0,
-              0,
-              0,
-              true,
-            );
+              pz = z0 + dz * t,
+              py = gb.groundY(px, pz);
+            gb.add(0.16, 1.2, 0.16, px, py + 0.6, pz, c, 0, 0, 0, true);
+            if (i > 0) {
+              var segLen = Math.sqrt(
+                (px - prevX) * (px - prevX) + (pz - prevZ) * (pz - prevZ),
+              );
+              var sx = (px + prevX) / 2,
+                sz = (pz + prevZ) / 2,
+                sy = (py + prevY) / 2;
+              gb.add(0.1, 0.2, segLen, sx, sy + 1.0, sz, c, ang, 0, 0, true);
+              gb.add(0.1, 0.2, segLen, sx, sy + 0.5, sz, c, ang, 0, 0, true);
+            }
+            prevX = px;
+            prevZ = pz;
+            prevY = py;
           }
-          var mx = (x0 + x1) / 2,
-            mz = (z0 + z1) / 2,
-            my = gb.groundY(mx, mz);
-          gb.add(0.1, 0.2, len, mx, my + 1.0, mz, c, ang, 0, 0, true);
-          gb.add(0.1, 0.2, len, mx, my + 0.5, mz, c, ang, 0, 0, true);
         }
-        function carProp(gb, x, y, z, c) {
-          gb.add(4.4, 0.9, 1.9, x, y + 0.75, z, c, 0, 0, 0, true);
-          gb.add(
-            2.4,
-            0.75,
-            1.75,
-            x - 0.15,
-            y + 1.5,
-            z,
-            col(0x9fd4ee),
-            0,
-            0,
-            0,
-            false,
-          );
-          gb.add(4.6, 0.3, 2.0, x, y + 0.32, z, col(0x1a1a1a), 0, 0, 0, false);
-          gb.add(
-            0.4,
-            0.7,
-            0.4,
-            x + 2.2,
-            y + 0.5,
-            z,
-            col(0xf0e6b0),
-            0,
-            0,
-            0,
-            false,
-          );
-        }
+        // carProp removed
         function streetLamp(gb, x, y, z, c) {
           gb.add(0.24, 6.4, 0.24, x, y + 3.2, z, c, 0, 0, 0, true);
           gb.add(1.5, 0.2, 0.24, x + 0.7, y + 6.3, z, c, 0, 0, 0, false);
@@ -1107,25 +1094,12 @@ import { buildRebootVans } from './reboot.js';
         }
 
         /* ============================================================================
-   POI generation
-   ========================================================================== */
-        /* Pickaxe-harvestable material implied by the batch's surface material. Road
-   tarmac and foliage deliberately return null so they stay indestructible. */
-        function harvKindForMat(mat) {
-          if (mat === MAT.wood) return "wood";
-          if (mat === MAT.brick || mat === MAT.stone) return "stone";
-          if (mat === MAT.metal) return "metal";
-          return null;
-        }
-        /* How much pickaxe work a world piece takes before it breaks. Tuned so a wall
-   goes down in ~3 swings (pickaxe dmg 22). */
-        var WORLD_HP = { wood: 62, stone: 88, metal: 124 };
-        /* Materials awarded for breaking a piece, and per successful swing. */
-        var WORLD_YIELD = { wood: 34, stone: 26, metal: 20 };
-
+    POI generation
+    ========================================================================== */
         /* Collapse every vertex of a destroyed piece onto a single point. The triangles
    become degenerate and stop rasterising, which removes the piece visually
-   without touching the index buffer or issuing a draw call. */
+   without touching the index buffer or issuing a draw call. (Retained for the
+   collapse/explosion effects even though the pickaxe is gone.) */
         function collapseBoxRange(geo, vStart, vCount) {
           var pa = geo.attributes.position.array;
           var o0 = vStart * 3,
@@ -1147,61 +1121,10 @@ import { buildRebootVans } from './reboot.js';
           mesh.castShadow = cast !== false;
           mesh.receiveShadow = true;
           worldGroup.add(mesh);
-          var hk = harvKindForMat(mat);
-          for (var i = 0; i < gb.boxes.length; i++) {
-            var bb = gb.boxes[i];
-            if (hk && bb.harv === undefined) {
-              bb.harv = hk;
-              bb.hp = WORLD_HP[hk];
-              bb.maxHp = bb.hp;
-              var it = gb.items[bb.itemIdx];
-              if (it)
-                bb.destruct = {
-                  geo: geo,
-                  vStart: it.vStart,
-                  vCount: it.vCount,
-                };
-            }
-            colliders.insert(bb);
-          }
+          for (var i = 0; i < gb.boxes.length; i++) colliders.insert(gb.boxes[i]);
           for (var j = 0; j < gb.plats.length; j++) insertPlatform(gb.plats[j]);
           for (var k = 0; k < gb.ramps.length; k++) insertRamp(gb.ramps[k]);
           return mesh;
-        }
-        /* One pickaxe swing against a harvestable world piece. Materials are awarded on
-   every swing; pieces that carry HP (i.e. real map structures) also take damage
-   and break apart for good once their HP runs out. Trees and rocks are inserted
-   straight into the collider grid without HP, so they stay infinite sources. */
-        function harvestStrike(ob, ch, hx, hy, hz, def) {
-          if (ob.dead) return;
-          var kind = ob.harv;
-          var gain = kind === "stone" ? 18 : kind === "metal" ? 14 : 22;
-          if (ch.mats[kind] < MAX_MATS) {
-            ch.mats[kind] = Math.min(MAX_MATS, ch.mats[kind] + gain);
-            if (ch.isPlayer) UI.floatGain(gain, kind);
-          }
-          Sfx.harvest(kind);
-          fxDebris(hx, hy, hz, kind, 4);
-          if (ob.hp === undefined) return;
-          ob.hp -= def.dmg;
-          if (ob.hp > 0) return;
-          /* ---- piece destroyed ---- */
-          ob.dead = true;
-          if (ob.plat) ob.plat.dead = true;
-          if (ob.destruct)
-            collapseBoxRange(
-              ob.destruct.geo,
-              ob.destruct.vStart,
-              ob.destruct.vCount,
-            );
-          var bonus = WORLD_YIELD[kind] || 20;
-          if (ch.mats[kind] < MAX_MATS) {
-            ch.mats[kind] = Math.min(MAX_MATS, ch.mats[kind] + bonus);
-            if (ch.isPlayer) UI.floatGain(bonus, kind);
-          }
-          fxDebris(hx, hy, hz, kind, 16);
-          Sfx.break();
-          if (nearPlayer(hx, hz, 70)) fxSmoke(hx, hy, hz, 2, 0.9, 0.7, 0.55);
         }
         function addLootSpot(x, z, y) {
           LOOTSPOTS.push({ x: x, y: y, z: z, used: false });
@@ -1279,17 +1202,6 @@ import { buildRebootVans } from './reboot.js';
               oz,
               rnd(0.9, 1.5),
               pickOne(WOODC),
-            );
-          }
-          for (var v = 0; v < 4; v++) {
-            var vx = rnd(-30, 30),
-              vz = rnd(-30, 30);
-            carProp(
-              gb,
-              vx,
-              terrainHeightAt(cx + vx, cz + vz) - y,
-              vz,
-              pickOne([0x3f7fd6, 0xd6d6d6, 0xc23b3b, 0x2f2f2f]),
             );
           }
           for (var s = 0; s < 4; s++) {
@@ -1596,7 +1508,9 @@ import { buildRebootVans } from './reboot.js';
             house(g2, 6.5, 6, 1, col(0xa07a4c), col(0x5e4230), {});
             commit(g2, MAT.wood, true);
           }
-          addChest(cx, cz, y + 21.6);
+          /* rooftop chest: sit it ON the roof slab (top of the 6*3.6 tower = 21.6,
+     slab 0.34 thick) and clear of the rooftop box, not buried inside it. */
+          addChest(cx + 3.5, cz - 3.5, y + 22.0);
           addChest(cx + 6, cz, y);
           for (var l = 0; l < 7; l++)
             addLootSpot(cx + rnd(-24, 24), cz + rnd(-24, 24), y);
@@ -1609,6 +1523,7 @@ import { buildRebootVans } from './reboot.js';
               z = cz + Math.sin(a) * r;
             var y = terrainHeightAt(x, z);
             if (y < 1.6 || terrainSlope(x, z) > 0.5) continue;
+            if (nearRoad(x, z, 5)) continue;
             TREES.push({
               x: x,
               y: y,
@@ -1628,22 +1543,23 @@ import { buildRebootVans } from './reboot.js';
         }
         /* --- NEW: airfield --- */
         function poiAirfield(cx, cz) {
-          /* flatten the runway strip first so the tarmac never floats or clips */
-          for (var s = -56; s <= 56; s += 7)
+          /* flatten the runway strip first so the tarmac never floats or clips.
+     The strip is kept short enough to stay inside the island rim. */
+          for (var s = -38; s <= 38; s += 7)
             flattenArea(cx, cz + s, 13.5, terrainRaw(cx, cz + s));
           var y = terrainHeightAt(cx, cz);
           var gb = new GeoBatch().origin(0, 0, 0, 0);
           /* runway */
           var rg = new GeoBatch().origin(cx, y + 0.06, cz, 0);
-          rg.add(22, 0.3, 110, 0, 0, 0, col(0x3a3d44), 0, 0, 0, true, true);
-          for (var d = 0; d < 12; d++)
+          rg.add(22, 0.3, 76, 0, 0, 0, col(0x3a3d44), 0, 0, 0, true, true);
+          for (var d = 0; d < 10; d++)
             rg.add(
               0.7,
               0.34,
               6,
               0,
               0.05,
-              -48 + d * 9,
+              -31.5 + d * 7,
               col(0xe8e8e8),
               0,
               0,
@@ -1727,6 +1643,7 @@ import { buildRebootVans } from './reboot.js';
               tz = cz + Math.sin(a) * r;
             var ty = terrainHeightAt(tx, tz);
             if (ty < 1.6) continue;
+            if (nearRoad(tx, tz, 5)) continue;
             TREES.push({
               x: tx,
               y: ty,
@@ -1833,7 +1750,6 @@ import { buildRebootVans } from './reboot.js';
               z = cz + rnd(-30, 30);
             var yy = terrainHeightAt(x, z);
             if (i % 3 === 0) {
-              carProp(gb, x, yy, z, pickOne(cols));
             } else if (i % 3 === 1) {
               gb.add(
                 rnd(3, 5),
@@ -1884,22 +1800,17 @@ import { buildRebootVans } from './reboot.js';
 
         function definePOIs() {
           POIS = [
-            { n: "TILTED TOWERS", x: 0, z: -96, r: 44, f: poiTilted },
-            { n: "PLEASANT PARK", x: -104, z: -58, r: 40, f: poiHouses },
-            { n: "RETAIL ROW", x: 100, z: -52, r: 34, f: poiRetail },
-            { n: "SALTY SPRINGS", x: -76, z: 64, r: 30, f: poiHouses },
-            { n: "GREASY GROVE", x: 78, z: 84, r: 32, f: poiHouses },
-            { n: "TOMATO TOWN", x: 6, z: 44, r: 26, f: poiRetail },
-            { n: "DUSTY DEPOT", x: -24, z: 126, r: 30, f: poiFactory },
-            { n: "ANARCHY ACRES", x: -124, z: -124, r: 38, f: poiFarm },
-            { n: "LONELY LODGE", x: 138, z: 24, r: 30, f: poiTower },
-            { n: "WAILING WOODS", x: -142, z: 8, r: 44, f: poiWoods },
-            { n: "MOISTY MIRE", x: 112, z: -130, r: 34, f: poiRuins },
-            { n: "SNOBBY SHORES", x: -40, z: -152, r: 28, f: poiHouses },
-            { n: "LUCKY LANDING", x: -132, z: 118, r: 44, f: poiAirfield },
-            { n: "HAUNTED HILLS", x: 56, z: -150, r: 32, f: poiGraveyard },
-            { n: "SUNNY SHORES", x: 150, z: 96, r: 30, f: poiBeach },
-            { n: "JUNK JUNCTION", x: -58, z: -16, r: 28, f: poiJunk },
+            { n: "TILTED TOWERS", x: 0, z: -90, r: 40, f: poiTilted },
+            { n: "PLEASANT PARK", x: -118, z: -52, r: 34, f: poiHouses },
+            { n: "RETAIL ROW", x: 125, z: -70, r: 30, f: poiRetail },
+            { n: "DUSTY DEPOT", x: -28, z: 140, r: 28, f: poiFactory },
+            { n: "ANARCHY ACRES", x: -80, z: -120, r: 34, f: poiFarm },
+            { n: "LONELY LODGE", x: 150, z: -8, r: 28, f: poiTower },
+            { n: "WAILING WOODS", x: -138, z: 22, r: 34, f: poiWoods },
+            { n: "TOMATO TOWN", x: 0, z: 40, r: 24, f: poiRetail },
+            { n: "LUCKY LANDING", x: -95, z: 100, r: 38, f: poiAirfield },
+            { n: "HAUNTED HILLS", x: 70, z: -135, r: 28, f: poiGraveyard },
+            { n: "MISTY RUINS", x: 125, z: 88, r: 26, f: poiRuins },
           ];
         }
         function buildPOIs() {
@@ -1927,24 +1838,21 @@ import { buildRebootVans } from './reboot.js';
         var ROADS = [
           [0, 1],
           [0, 2],
-          [0, 3],
-          [0, 4],
-          [0, 5],
-          [0, 15],
-          [0, 6],
-          [1, 7],
-          [1, 11],
-          [2, 13],
-          [2, 8],
+          [0, 7],
+          [0, 9],
+          [1, 4],
+          [1, 6],
+          [2, 5],
+          [2, 9],
+          [3, 7],
+          [3, 8],
           [3, 10],
-          [4, 14],
-          [6, 12],
-          [7, 9],
+          [4, 6],
+          [4, 9],
           [5, 10],
-          [8, 14],
-          [13, 11],
-          [12, 7],
-          [9, 1],
+          [6, 8],
+          [7, 10],
+          [8, 10],
         ];
         function roadPoint(x, z) {
           return terrainHeightAt(x, z);
@@ -1959,12 +1867,16 @@ import { buildRebootVans } from './reboot.js';
               dz = B.z - A.z,
               len = Math.sqrt(dx * dx + dz * dz);
             var n = Math.max(2, Math.floor(len / 7));
-            /* flatten a corridor so the road never floats or clips */
+            /* flatten the corridor to a smooth linear ramp between the two POI pads.
+     Flattening every sample to its own current height made steep roads climb
+     in 3-6m steps that players could not walk up. */
+            var hA = terrainHeightAt(A.x, A.z),
+              hB = terrainHeightAt(B.x, B.z);
             for (var s = 0; s <= n; s++) {
               var t = s / n;
               var px = A.x + dx * t,
                 pz = A.z + dz * t;
-              flattenArea(px, pz, 6.0, terrainHeightAt(px, pz));
+              flattenArea(px, pz, 6.0, lerp(hA, hB, t));
             }
             var ang = Math.atan2(dx, dz);
             for (var q = 0; q < n; q++) {
@@ -2059,7 +1971,7 @@ import { buildRebootVans } from './reboot.js';
           while (pine.length < 330 && tries < 14000) {
             tries++;
             var a = rnd(0, 6.28),
-              r = Math.sqrt(rnd(0, 1)) * 174;
+              r = Math.sqrt(rnd(0, 1)) * 198;
             var x = Math.cos(a) * r,
               z = Math.sin(a) * r;
             var y = terrainHeightAt(x, z);
@@ -2078,7 +1990,7 @@ import { buildRebootVans } from './reboot.js';
           while (blob.length < 180 && tries < 10000) {
             tries++;
             var a2 = rnd(0, 6.28),
-              r2 = Math.sqrt(rnd(0, 1)) * 170;
+              r2 = Math.sqrt(rnd(0, 1)) * 200;
             var x2 = Math.cos(a2) * r2,
               z2 = Math.sin(a2) * r2;
             var y2 = terrainHeightAt(x2, z2);
@@ -2097,12 +2009,12 @@ import { buildRebootVans } from './reboot.js';
           while (rocks.length < 170 && tries < 10000) {
             tries++;
             var a3 = rnd(0, 6.28),
-              r3 = Math.sqrt(rnd(0, 1)) * 178;
+              r3 = Math.sqrt(rnd(0, 1)) * 205;
             var x3 = Math.cos(a3) * r3,
               z3 = Math.sin(a3) * r3;
             var y3 = terrainHeightAt(x3, z3);
             if (y3 < 1.2) continue;
-            if (nearPOI(x3, z3, 1)) continue;
+            if (nearPOI(x3, z3, 1) || nearRoad(x3, z3, 5)) continue;
             rocks.push({
               x: x3,
               y: y3,
@@ -2115,12 +2027,12 @@ import { buildRebootVans } from './reboot.js';
           while (bush.length < 460 && tries < 10000) {
             tries++;
             var a4 = rnd(0, 6.28),
-              r4 = Math.sqrt(rnd(0, 1)) * 176;
+              r4 = Math.sqrt(rnd(0, 1)) * 200;
             var x4 = Math.cos(a4) * r4,
               z4 = Math.sin(a4) * r4;
             var y4 = terrainHeightAt(x4, z4);
             if (y4 < 1.8 || y4 > 46) continue;
-            if (nearRoad(x4, z4, 4.0)) continue;
+            if (nearPOI(x4, z4, 2) || nearRoad(x4, z4, 4.0)) continue;
             bush.push({ x: x4, y: y4, z: z4, s: rnd(0.5, 1.25) });
           }
           for (var i = 0; i < TREES.length; i++) {
@@ -2141,13 +2053,13 @@ import { buildRebootVans } from './reboot.js';
           while (tufts.length < 3200 && tries < 30000) {
             tries++;
             var a5 = rnd(0, 6.28),
-              r5 = Math.sqrt(rnd(0, 1)) * 168;
+              r5 = Math.sqrt(rnd(0, 1)) * 195;
             var x5 = Math.cos(a5) * r5,
               z5 = Math.sin(a5) * r5;
             var y5 = terrainHeightAt(x5, z5);
             if (y5 < 2.0 || y5 > 58) continue;
             if (terrainSlope(x5, z5) > 0.6) continue;
-            if (nearRoad(x5, z5, 4.4)) continue;
+            if (nearPOI(x5, z5, 1) || nearRoad(x5, z5, 4.4)) continue;
             tufts.push({
               x: x5,
               y: y5,
@@ -2211,7 +2123,6 @@ import { buildRebootVans } from './reboot.js';
               maxY: o.y + 4.4 * o.s,
               minZ: o.z - 0.55,
               maxZ: o.z + 0.55,
-              harv: "wood",
             });
           }
           worldGroup.add(trunk);
@@ -2249,7 +2160,6 @@ import { buildRebootVans } from './reboot.js';
               maxY: ob.y + 3.4 * ob.s,
               minZ: ob.z - 0.5,
               maxZ: ob.z + 0.5,
-              harv: "wood",
             });
           }
           worldGroup.add(bmesh);
@@ -2280,7 +2190,6 @@ import { buildRebootVans } from './reboot.js';
                 maxY: od.y + 5 * od.s,
                 minZ: od.z - 0.4,
                 maxZ: od.z + 0.4,
-                harv: "wood",
               });
             }
             worldGroup.add(dmesh);
@@ -2314,7 +2223,6 @@ import { buildRebootVans } from './reboot.js';
               maxY: orr.y + orr.s * 0.9,
               minZ: orr.z - orr.s * 0.9,
               maxZ: orr.z + orr.s * 0.9,
-              harv: "stone",
             });
           }
           worldGroup.add(rmesh);
@@ -2473,22 +2381,13 @@ import { buildRebootVans } from './reboot.js';
           while (n < 52 && tries < 5000) {
             tries++;
             var a = rnd(0, 6.28),
-              r = Math.sqrt(rnd(0, 1)) * 166;
+              r = Math.sqrt(rnd(0, 1)) * 190;
             var x = Math.cos(a) * r,
               z = Math.sin(a) * r;
             var y = terrainHeightAt(x, z);
             if (y < 2.0 || terrainSlope(x, z) > 0.35) continue;
             if (nearPOI(x, z, 1) || nearRoad(x, z, 5)) continue;
-            var isCar = srnd() < 0.6;
-            if (isCar) {
-              carProp(
-                gb,
-                x,
-                y,
-                z,
-                pickOne([0x8a3a2f, 0x4a5a6a, 0x7a7a7a, 0x3a5a8a]),
-              );
-            } else {
+            {
               gb.add(
                 1.2,
                 1.5,
@@ -2516,7 +2415,7 @@ import { buildRebootVans } from './reboot.js';
                 false,
               );
             }
-            var tag = isCar ? 1.9 : 0.9;
+            var tag = 0.9;
             colliders.insert({
               minX: x - tag,
               maxX: x + tag,
@@ -2524,7 +2423,6 @@ import { buildRebootVans } from './reboot.js';
               maxY: y + 1.8,
               minZ: z - tag,
               maxZ: z + tag,
-              harv: "metal",
             });
             n++;
           }
@@ -2649,6 +2547,7 @@ export {
   rayAABB, raycastWorld, hasLOS, makeMaterials,
   addLootSpot, addChest, buildPOIs, definePOIs, buildRoads, buildVegetation,
   buildChests, buildMetalNodes, buildMapCanvas, initWorldContent,
-  CHEST_GLOW, WOODC, WORLD_HP, WORLD_YIELD, harvestStrike, harvKindForMat, CHESTS
+  CHEST_GLOW, WOODC, CHESTS
 };
+
 

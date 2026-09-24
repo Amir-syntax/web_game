@@ -53,27 +53,15 @@
           <div id="hitmarker"></div>
         </div>
         <div id="bottomcenter">
-          <div id="buildInfo" class="hidden">
-            BUILD MODE &middot; <b>WOOD</b> &middot; <b>Q</b> EXIT &middot;
-            <b>V</b> MATERIAL &middot; <b>G</b> EDIT
-          </div>
-          <div id="buildBar" class="hidden">
-            <div class="bp" data-piece="wall"><em>1</em>WALL</div>
-            <div class="bp" data-piece="floor"><em>2</em>FLOOR</div>
-            <div class="bp" data-piece="ramp"><em>3</em>RAMP</div>
-            <div class="bp" data-piece="pyramid"><em>4</em>CONE</div>
-            <div class="bp" data-piece="edit"><em>G</em>EDIT</div>
-          </div>
           <div id="slotBar"></div>
         </div>
         <div id="bottomleft">
-          <div id="mat"></div>
           <div id="cons"></div>
         </div>
         <div id="bottomright">
           <div id="ammoBox">
             <b id="ammoCur">0</b><span id="ammoMax">/0</span
-            ><i id="weaponName">PICKAXE</i>
+            ><i id="weaponName">PISTOL</i>
           </div>
           <div id="weaponRarity"></div>
           <div id="reloadBar"><i></i></div>
@@ -95,10 +83,6 @@
         <div id="stormOverlay"></div>
         <div id="prompt"></div>
         <div id="reviveBar"><i></i></div>
-        <div id="vehHud">
-          <b id="vehSpeed">0</b><span>KM/H</span>
-          <div id="vehBoost"><i></i></div>
-        </div>
         <div id="skydiveHud" class="hidden">
           <div id="altMeter"><b id="altVal">0</b><span>M</span></div>
           <div id="gliderHint">SPACE TO DEPLOY GLIDER</div>
@@ -121,7 +105,6 @@
         <button class="tbtn" id="tbJump">JUMP</button>
         <button class="tbtn" id="tbFire">FIRE</button>
         <button class="tbtn" id="tbAim">AIM</button>
-        <button class="tbtn" id="tbBuild">BUILD</button>
         <button class="tbtn" id="tbReload">RELOAD</button>
         <button class="tbtn" id="tbUse">USE</button>
         <button class="tbtn" id="tbCrouch">CROUCH</button>
@@ -147,12 +130,10 @@
         <button id="btnPlay">DROP IN</button>
         <div id="ctrls">
           <span><b>WASD</b> move</span><span><b>SHIFT</b> sprint</span>
-          <span><b>MOUSE</b> look</span><span><b>LMB</b> fire / place</span>
+          <span><b>MOUSE</b> look</span><span><b>LMB</b> fire</span>
           <span><b>RMB</b> aim down sights</span
           ><span><b>SPACE</b> jump / glide</span>
-          <span><b>Q</b> build mode</span><span><b>1-4</b> build piece</span>
-          <span><b>G</b> edit build</span><span><b>V</b> build material</span>
-          <span><b>F</b> pickup / revive / drive</span
+          <span><b>F</b> pickup / revive</span
           ><span><b>R</b> reload</span> <span><b>1-6</b> hotbar</span
           ><span
             ><b>TAB / M</b> map &middot; <b>I</b> bag &middot;
@@ -181,7 +162,6 @@
           <span><i style="background: #ff3030"></i>ENEMY</span>
           <span><i style="background: #a850ff"></i>STORM</span>
           <span><i style="background: #ffd76a"></i>BATTLE BUS</span>
-          <span><i style="background: #ff8f3f"></i>VEHICLE</span>
         </div>
         <div class="ovSub">
           PRESS <b>M</b>, <b>TAB</b> OR CLICK OUTSIDE TO CLOSE

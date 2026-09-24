@@ -8,7 +8,6 @@ import {
 import { terrainHeightAt, groundAt, groundInfo, surfaceAt, stepTopAt, collideXZ, raycastWorld, hasLOS, terrainSlope, MAT, POIS, ROADS } from './world.js';
 import { WEAPONS, RARITY, LOOT, LOOT_WEAPONS, fireWeapon, healChar, useHeal, giveItem, reviveChar, teammates, teamOf, openChest, startReload, finishReload, removeLoot, canCarry, tryKnockOrKill, damageChar, addShield } from './combat.js';
 import { CHARS, PC, createChar, moveChar, animateChar } from './chars.js';
-import { COST, placementValid, computePlacement, placeBuild, rampRush, tryPlace, updateGhost, hideGhost, hasPieceAt, BUILDS } from './build.js';
 import { STORM, BUS, updateStorm, deployGlider, ejectFromBus } from './storm.js';
 import { DROPS, nearestDrop, openDrop, dropLoot } from './drops.js';
 import { VANS, nearestVan, doReboot, deadTeammateOf, livingTeammatesOf } from './reboot.js';
@@ -17,8 +16,8 @@ import { GAMETIME, MODE } from './main.js';
         /* ==== 60_ai.js ==== */
         /* ============================================================================
    60_AI — bot brains. Navigation-grid A* pathfinding, personality archetypes,
-   squad play (no friendly fire, revives), looting, storm rotation, defensive
-   and offensive building, healing, and skydive targeting.
+   squad play (no friendly fire, revives), looting, storm rotation, healing,
+   and skydive targeting.
    Expensive work (pathfinding, line-of-sight, obstacle probes) runs on the
    low-frequency "think" tick; per-frame work stays cheap.
    ========================================================================== */
@@ -111,12 +110,11 @@ import { GAMETIME, MODE } from './main.js';
             var D = DIFF_TABLE[DIFF];
             var pers = pickOne([
               "rusher",
-              "builder",
               "camper",
               "sniper",
               "looter",
               "rusher",
-              "builder",
+              "camper",
             ]);
             var accBase =
               pers === "sniper"
@@ -134,7 +132,6 @@ import { GAMETIME, MODE } from './main.js';
               react: 0,
               accuracy: clamp(accBase + D.acc, 0.15, 0.95),
               underFire: 0,
-              buildCd: rnd(0, 2),
               healCd: 0,
               strafe: chance(0.5) ? 1 : -1,
               strafeT: rnd(0.6, 1.8),
@@ -168,8 +165,6 @@ import { GAMETIME, MODE } from './main.js';
               lastZ: 0,
               stillT: 0,
               aggro: pers === "rusher" ? 1.35 : pers === "camper" ? 0.7 : 1.0,
-              buildSkill:
-                pers === "builder" ? 1.5 : pers === "rusher" ? 0.9 : 0.7,
               preferred:
                 pers === "sniper"
                   ? ["sniper", "handcannon", "burst", "ar"]
@@ -377,7 +372,6 @@ import { GAMETIME, MODE } from './main.js';
           updateAutoReload(b, dt);
           var ai = b.ai;
           if (ai.underFire > 0) ai.underFire -= dt;
-          if (ai.buildCd > 0) ai.buildCd -= dt;
           if (ai.healCd > 0) ai.healCd -= dt;
           if (ai.jumpCd > 0) ai.jumpCd -= dt;
           if (ai.strafeT > 0) ai.strafeT -= dt;
@@ -673,7 +667,10 @@ import { GAMETIME, MODE } from './main.js';
           if (ai.mode === "fight" && e && e.alive && ai.react <= 0) {
             engage = true;
             var w = b.slots[b.slot];
-            var def = WEAPONS[w ? w.id : "pickaxe"];
+            /* without a pickaxe every bot always holds a gun, but a null slot can
+               still happen mid-swap -- fall back to the pistol's stats, which is
+               what an unarmed bot effectively has */
+            var def = WEAPONS[w ? w.id : "pistol"];
             var closeRange = def.cls === "shotgun";
             var range = Math.min(
               def.range * (closeRange ? 0.55 : 0.8),
@@ -726,17 +723,6 @@ import { GAMETIME, MODE } from './main.js';
               } else if (def.auto || b.fireCd <= 0) {
                 botShoot(b, e);
               }
-            }
-            /* defensive + offensive building */
-            if (ai.buildCd <= 0 && b.mats.wood >= COST * 2) {
-              var wantBuild = false;
-              if (ai.underFire > 0 && d > 6 && chance(0.6 * ai.buildSkill))
-                wantBuild = true;
-              else if (ai.personality === "rusher" && d > 10 && chance(0.25))
-                wantBuild = true;
-              else if (ai.personality === "builder" && chance(0.3))
-                wantBuild = true;
-              if (wantBuild) botBuild(b, e);
             }
             /* keep a preferred range for snipers */
             if (ai.personality === "sniper" && d < 16) {
@@ -933,48 +919,7 @@ import { GAMETIME, MODE } from './main.js';
             z: rnd(-1, 1) * k * moving,
           };
         }
-        function botBuild(b, e) {
-          var ai = b.ai;
-          var mat =
-            b.mats.metal > 120
-              ? "metal"
-              : b.mats.stone > 120
-                ? "stone"
-                : "wood";
-          if (b.mats[mat] < COST * 2) mat = "wood";
-          if (b.mats[mat] < COST * 2) return;
-          /* rushers push with ramps, defenders wall up */
-          if (ai.personality === "rusher" && e && chance(0.55)) {
-            if (rampRush(b, mat) > 0) {
-              ai.buildCd = rnd(1.4, 2.6) / ai.buildSkill;
-              return;
-            }
-          }
-          var dx = ai.engage ? e.x - b.x : b.aimX;
-          var dz = ai.engage ? e.z - b.z : b.aimZ;
-          var l = Math.sqrt(dx * dx + dz * dz) || 1;
-          dx /= l;
-          dz /= l;
-          var made = 0;
-          /* a wall plus a ramp behind it is the classic panic tower */
-          for (var i = 0; i < 3; i++) {
-            var type = i === 0 ? "wall" : i === 1 ? "ramp" : "floor";
-            var G = CFG.GRID;
-            var px = b.x + dx * G * (0.8 + i * 0.35),
-              pz = b.z + dz * G * (0.8 + i * 0.35);
-            var pl = computePlacement(b.x, b.z, b.y, b.aimX, b.aimZ, 0, type);
-            if (type === "floor")
-              pl = computePlacement(px, pz, b.y + G, dx, dz, -1, type);
-            if (pl && placementValid(pl, b) && b.mats[mat] >= COST) {
-              if (placeBuild(pl, mat, b)) {
-                b.mats[mat] -= COST;
-                made++;
-              }
-            }
-          }
-          if (made) ai.buildCd = rnd(1.1, 2.4) / ai.buildSkill;
-          else ai.buildCd = rnd(0.6, 1.2);
-        }
+
 
 
 

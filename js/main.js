@@ -13,7 +13,6 @@ import {
   nearestInteract, openChest, tryPickup, reviveChar, updateKnocked,
   updateProjectiles, updateFX, updateLoot, updateChests, WEAPONS, RARITY, HEALS, initFX
 } from './combat.js';
-import { BUILD_MODE, BUILD_HOLD, clearAllBuilds, hideGhost, updateBuild, damageBuild, initBuildAssets } from './build.js';
 import { STORM, resetStorm, resetBus, updateStorm, updateBus, initStormAssets, initBusAssets } from './storm.js';
 import { resetDrops, updateDrops, openDrop } from './drops.js';
 import { resetReboot, updateReboot, doReboot, REBOOT_ST, deadTeammateOf, nearestVan } from './reboot.js';
@@ -63,7 +62,6 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
         function resetMatch() {
           MODE = SETTINGS.mode || "solo";
           TEAM_SIZE = MODE === "solo" ? 1 : MODE === "duo" ? 2 : 4;
-          clearAllBuilds();
           while (LOOT.length) removeLoot(LOOT[0]);
           while (PROJECTILES.length) PROJECTILES.pop();
           for (var i = 0; i < CHESTS.length; i++) {
@@ -72,13 +70,7 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
             if (c.lid) c.lid.rotation.x = 0;
             if (c.spr) c.spr.visible = true;
           }
-          for (var v = 0; v < VEHICLES.length; v++) {
-            var veh = VEHICLES[v];
-            veh.driver = null;
-            veh.speed = 0;
-            veh.mesh.rotation.x = 0;
-            veh.mesh.rotation.z = 0;
-          }
+          // vehicle cleanup removed
           for (var j = 0; j < CHARS.length; j++) {
             var ch = CHARS[j];
             if (ch.mesh) worldGroup.remove(ch.mesh);
@@ -97,13 +89,13 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
           resetBus();
           resetDrops();
           resetReboot();
-          BUILD_MODE = false;
-          document.getElementById("buildBar").classList.add("hidden");
-          hideGhost();
           PC.state = "bus";
           PC.onBus = true;
+          /* The pickaxe and the whole building kit are gone, so everyone drops in
+             with a common pistol -- enough to defend the landing, not enough to
+             skip looting. */
           PC.slots = [
-            { id: "pickaxe", rarity: 0, ammoInMag: 0 },
+            { id: "pistol", rarity: 0, ammoInMag: 16 },
             null,
             null,
             null,
@@ -115,18 +107,16 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
           PC.shield = 0;
           PC.eliminations = 0;
           PC.damageDealt = 0;
-          PC.mats = { wood: 250, stone: 100, metal: 50 };
           PC.heals = { band: 5, mini: 3, med: 0, pot: 0 };
           PC.ammo = { light: 150, medium: 120, heavy: 15, shell: 24, rocket: 4 };
           PC.knocked = false;
           PC.bleed = 0;
-          PC.vehicle = null;
+          // PC.vehicle = null; removed
           attachWeapon(PC);
           UI.setStormOverlay(0);
           UI.setGlider(false);
           UI.hidePrompt();
           UI.showRevive(false);
-          UI.showVeh(false);
           UI.setScope(false);
           PLAYER_STATS = { shots: 0, hits: 0, dist: 0 };
           UI.closeOverlays();
@@ -194,12 +184,11 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
             "#" + PC.placement + " OF " + CFG.MAXP,
             2.6,
           );
-          Sfx.vehicle(false);
+          // Sfx.vehicle(false); removed
           Sfx.setStorm(0);
           Sfx.defeat();
           UI.setStormOverlay(0);
           UI.setScope(false);
-          UI.showVeh(false);
           UI.showRevive(false);
           SPECTATE_TARGET = null;
           pickSpectateTarget();
@@ -220,7 +209,7 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
           MATCH_OVER = true; /* stops the world even if the player is still spectating */
           SPECTATING = false;
           Sfx.setStorm(0);
-          Sfx.vehicle(false);
+          // Sfx.vehicle(false); removed
           var win =
             MODE === "solo"
               ? PC.alive && ALIVE === 1
@@ -267,9 +256,6 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
             "<span>ACCURACY</span><b>" +
             acc +
             "%</b>" +
-            "<span>MATERIALS USED</span><b>" +
-            Math.round(PC.mats.wood + PC.mats.stone + PC.mats.metal) +
-            "</b>" +
             "<span>DISTANCE</span><b>" +
             Math.round(PLAYER_STATS.dist) +
             " m</b>" +
@@ -290,8 +276,6 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
           if (!SETTINGS.aimAssist) return;
           if (!(IS_MOBILE || SETTINGS.autofire || Input.aim || Input.fire)) return;
           if (!PC.alive || PC.knocked) return;
-          if (PC.vehicle || BUILD_MODE)
-            return; /* never tug the camera while driving/building */
           var best = null,
             bd = 1e9,
             maxAaDist = 130;
@@ -345,24 +329,10 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
             return;
           }
           PC.aiming =
-            (Input.aim || (IS_MOBILE && Input.fire && SETTINGS.autofire)) &&
-            !BUILD_MODE;
+            (Input.aim || (IS_MOBILE && Input.fire && SETTINGS.autofire));
           PC.sprinting = Input.sprint && !PC.aiming && Input.axisZ > 0.1;
           PC.aimSpread = PC.aiming ? 0.2 : PC.sprinting ? 1.1 : 0.65;
 
-          if (PC.vehicle) {
-            PC.vehThrottle = Input.axisZ;
-            PC.vehSteer = Input.axisX;
-            PC.vehBoost = Input.sprint;
-            if (Input.usePress) {
-              exitVehicle(PC);
-              Input.usePress = false;
-            }
-            Input.firePress = false;
-            hideGhost();
-            UI.setScope(false);
-            return;
-          }
           if (Input.wheel !== 0) {
             selectSlot((PC.slot + Input.wheel + 6) % 6);
             Input.wheel = 0;
@@ -377,26 +347,18 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
           }
           if (PC.using && (Input.firePress || Input.jump)) PC.using = null;
 
-          if (BUILD_MODE) {
-            if (Input.fire) BUILD_HOLD += dt;
-            else BUILD_HOLD = 0;
-            updateBuild(dt, Input.fire);
-          } else {
-            hideGhost();
-            BUILD_HOLD = 0;
-            if (Input.fire) {
-              var w = PC.slots[PC.slot];
-              if (w) {
-                var def = WEAPONS[w.id];
-                if (def.auto || Input.firePress || SETTINGS.autofire)
-                  fireWeapon(PC, CAM.aim.x, CAM.aim.y, CAM.aim.z, true);
-              }
+          if (Input.fire) {
+            var w = PC.slots[PC.slot];
+            if (w) {
+              var def = WEAPONS[w.id];
+              if (def.auto || Input.firePress || SETTINGS.autofire)
+                fireWeapon(PC, CAM.aim.x, CAM.aim.y, CAM.aim.z, true);
             }
           }
           Input.firePress = false;
 
-          /* convenience auto-pickup of ammo & materials */
-          if (!BUILD_MODE) {
+          /* convenience auto-pickup of ammo */
+          {
             for (var li = 0; li < LOOT.length; li++) {
               var lt = LOOT[li];
               if (
@@ -418,9 +380,8 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
               }
             }
           }
-          /* interaction: chests, loot, downed teammates, vehicles */
+          /* interaction: chests, loot, downed teammates */
           var near = nearestInteract(PC);
-          var veh = nearestVehicle(PC);
           var promptText = null,
             action = null;
           if (near) {
@@ -462,11 +423,8 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
               promptText = "<b>F</b> PICK UP " + ntxt;
               action = "loot";
             }
-          } else if (veh) {
-            promptText =
-              "<b>F</b> ENTER " + (veh.type === "boat" ? "BOAT" : "VEHICLE");
-            action = "vehicle";
           }
+
           if (promptText) UI.showPrompt(promptText);
           else UI.hidePrompt();
 
@@ -526,7 +484,7 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
               if (action === "chest") openChest(near.obj, PC);
               else if (action === "loot") tryPickup(PC);
               else if (action === "drop") openDrop(near.obj, PC);
-              else if (action === "vehicle") enterVehicle(PC, veh);
+              // vehicle action removed
             }
           }
           Input.usePress = false;
@@ -613,6 +571,8 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
 
           if (!MATCH_OVER && (MATCH_RUNNING || SPECTATING || !PC)) {
             if (PC) {
+              /* Update vehicles FIRST so their colliders are fresh for player physics */
+              updateVehicles(dt);
               if (PC.alive) {
                 updatePlayerInput(dt);
                 updatePlayer(dt);
@@ -642,7 +602,6 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
                 if (bc.knocked) updateKnocked(bc, dt);
                 updateBot(bc, dt);
               }
-              updateVehicles(dt);
               updateStorm(dt);
               updateBus(dt);
               updateDrops(dt);
@@ -732,16 +691,10 @@ import { UI, Input, IS_MOBILE, selectSlot } from './ui.js';
                 },
               ],
               [
-                "RAISING TILTED TOWERS",
-                function () {
-                  initBuildAssets();
-                },
-              ],
-              [
                 "MAPPING THE BATTLEFIELD",
                 function () {
                   initFX();
-                  createVehicles();
+                  // createVehicles(); removed
                 },
               ],
               [

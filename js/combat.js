@@ -8,7 +8,6 @@ import {
 import { scene, worldGroup, renderer, camera } from './gfx.js';
 import { terrainHeightAt, raycastWorld, groundInfo, groundAt, hasLOS, MAT, collideXZ, surfaceAt, terrainSlope } from './world.js';
 import { PC, CHARS, CAM, createChar } from './chars.js';
-import { BUILDS, damageBuild, hasPieceAt } from './build.js';
 import { UI } from './ui.js';
 import { GAMETIME, MODE, SPECTATE_TARGET, pickSpectateTarget, ALIVE, MATCH_OVER } from './main.js';
 import { DROPS } from './drops.js';
@@ -36,21 +35,6 @@ import { VANS, spawnRebootCard } from './reboot.js';
         };
 
         var WEAPONS = {
-          pickaxe: {
-            id: "pickaxe",
-            name: "PICKAXE",
-            cls: "melee",
-            dmg: 22,
-            rate: 0.42,
-            range: 3.8,
-            spread: 0,
-            mag: 0,
-            reload: 0,
-            ammo: null,
-            head: 1.5,
-            auto: true,
-            icon: "\u26CF",
-          },
           pistol: {
             id: "pistol",
             name: "PISTOL",
@@ -241,7 +225,6 @@ import { VANS, spawnRebootCard } from './reboot.js';
         /* Grip class per weapon — which hold pose the animation rig uses. Keeping it
    in one table means adding a weapon only needs a line here. */
         var HOLD_CLASS = {
-          pickaxe: "axe",
           pistol: "pistol",
           smg: "rifle",
           tsmg: "rifle",
@@ -379,12 +362,7 @@ import { VANS, spawnRebootCard } from './reboot.js';
             g.add(c);
             return c;
           }
-          if (id === "pickaxe") {
-            box(0.09, 0.09, 1.2, 0, 0, 0.26, dark);
-            box(0.62, 0.075, 0.1, 0, 0.02, 0.88, metal);
-            box(0.1, 0.26, 0.1, 0, 0.11, 0.88, accent);
-            box(0.2, 0.05, 0.3, 0, -0.06, 0.02, grip);
-          } else if (id === "pistol") {
+          if (id === "pistol") {
             box(0.11, 0.17, 0.46, 0, 0, 0.17, metal);
             box(0.1, 0.21, 0.12, 0, -0.17, 0.02, grip, 0.16);
             box(0.06, 0.06, 0.22, 0, 0.04, 0.44, accent);
@@ -930,8 +908,6 @@ import { VANS, spawnRebootCard } from './reboot.js';
                   p.vy = (p.vy - 2 * dot * res.ny) * 0.42;
                   p.vz = (p.vz - 2 * dot * res.nz) * 0.42;
                   if (Math.abs(p.vy) < 1.4 && res.ny > 0.5) p.vy = 0;
-                  if (res.obj && res.obj.build)
-                    damageBuild(res.obj.build, 18, p.owner);
                   Sfx.step("metal");
                   if (len - res.t < 0.05) {
                     p.x += dx;
@@ -984,16 +960,6 @@ import { VANS, spawnRebootCard } from './reboot.js';
           }
           if (owner && owner.damageDealt !== undefined && dealt > 0)
             owner.damageDealt += dealt;
-          for (var k in BUILDS) {
-            if (!BUILDS.hasOwnProperty(k)) continue;
-            var b = BUILDS[k];
-            if (b.dead) continue;
-            var bd = dist2(b.x, b.z, x, z);
-            if (bd < radius + 1.6) {
-              var bf = 1 - bd / (radius + 1.6);
-              damageBuild(b, 220 * bf * bf, owner);
-            }
-          }
           for (var j = PROJECTILES.length - 1; j >= 0; j--) {
             var p = PROJECTILES[j];
             if (
@@ -1104,7 +1070,7 @@ import { VANS, spawnRebootCard } from './reboot.js';
                     ? 2.3
                     : 1.4,
             );
-            if (def.cls !== "melee" && def.cls !== "throw")
+            if (def.cls !== "throw")
               fxSmoke(mp.x, mp.y, mp.z, 1, 0.5, 0.5, 0.45);
           }
           if (def.projectile) {
@@ -1212,11 +1178,8 @@ import { VANS, spawnRebootCard } from './reboot.js';
                 hy2 = mp.y + sy * wallT,
                 hz = mp.z + sz * wallT;
               if (res.kind === "box" && res.obj) {
-                var ob = res.obj;
-                if (ob.build)
-                  damageBuild(ob.build, def.dmg * (def.pellets ? 1 : 0.9), ch);
-                else if (ob.harv && def.cls === "melee")
-                  harvestStrike(ob, ch, hx, hy2, hz, def);
+                /* harvesting and build-piece damage are gone with the pickaxe
+                   and the building kit -- a bullet now just sparks off the world */
               }
               var dc = res.kind === "terrain" ? 0xd8c48c : 0xbfbfbf;
               fxSpark(hx, hy2, hz, dc, 3, 1.4, 0.22);
@@ -1248,16 +1211,12 @@ import { VANS, spawnRebootCard } from './reboot.js';
                 );
             }
           }
-          if (def.cls === "melee") {
-            Sfx.swing();
-            ch.swingT = 0;
-            ch.swingDur = def.rate;
-          } else {
+          {
             Sfx.shot(def.cls, ch.isPlayer ? 0 : dist2(ch.x, ch.z, PC.x, PC.z));
             if (visible) fxShell(mp.x, mp.y - 0.1, mp.z, dx, dy, dz);
           }
           if (ch.isPlayer) {
-            if (def.cls !== "melee") PLAYER_STATS.shots++;
+            PLAYER_STATS.shots++;
             if (hitAny) PLAYER_STATS.hits++;
             UI.hitmark(hitAny, hitHead, hitChar, hitKilled);
             UI.kick(def.cls);
@@ -1544,9 +1503,7 @@ import { VANS, spawnRebootCard } from './reboot.js';
           if (tgt.buildGroup) {
             tgt.buildGroup.visible = false;
           }
-          if (tgt.vehicle) {
-            exitVehicle(tgt, true);
-          }
+          // vehicle removed from combat
           fxSpark(tgt.x, tgt.y + 1.0, tgt.z, 0xffd76a, 12, 3.2, 0.5);
           for (var i = 1; i < 6; i++) {
             var w = tgt.slots[i];
@@ -1584,13 +1541,6 @@ import { VANS, spawnRebootCard } from './reboot.js';
                 ammo: "light",
                 count: Math.min(60, tgt.ammo.light),
               },
-            );
-          if (tgt.mats.wood > 0)
-            spawnLoot(
-              tgt.x + rnd(-1.5, 1.5),
-              tgt.y + 0.4,
-              tgt.z + rnd(-1.5, 1.5),
-              { kind: "mat", mat: "wood", count: Math.min(120, tgt.mats.wood) },
             );
           spawnLoot(tgt.x + rnd(-1, 1), tgt.y + 0.4, tgt.z + rnd(-1, 1), {
             kind: "shield",
@@ -1831,8 +1781,8 @@ import { VANS, spawnRebootCard } from './reboot.js';
             /* Swap into the slot the player is actually holding. Previously this always
        took the first empty slot, so picking a weapon up while on weapon 4 landed
        it in slot 5 and yanked the selection there instead of replacing weapon 4.
-       Falls back to the first empty slot when the pickaxe is held, and to the
-       weakest-weapon swap when the inventory is full. */
+       Falls back to the first empty slot, and to the weakest-weapon swap when the
+       inventory is full. Slot 0 is the starting pistol and is never replaced. */
             if (ch.isPlayer && ch.slot > 0 && ch.slots[ch.slot]) slot = ch.slot;
             if (slot < 0)
               for (var i = 1; i < 6; i++)
@@ -1928,13 +1878,6 @@ import { VANS, spawnRebootCard } from './reboot.js';
               15,
               ch.heals[item.heal] +
                 (item.heal === "band" ? 3 : item.heal === "mini" ? 3 : 1),
-            );
-            return true;
-          }
-          if (item.kind === "mat") {
-            ch.mats[item.mat] = Math.min(
-              MAX_MATS,
-              ch.mats[item.mat] + item.count,
             );
             return true;
           }
@@ -2072,9 +2015,9 @@ import { VANS, spawnRebootCard } from './reboot.js';
             else if (r === 8) item = { kind: "heal", heal: "med" };
             else
               item = {
-                kind: "mat",
-                mat: pickOne(["wood", "stone", "metal"]),
-                count: 60,
+                kind: "ammo",
+                ammo: pickOne(["light", "medium", "shell", "heavy"]),
+                count: 30,
               };
             var a = rnd(0, 6.28),
               rr = rnd(1.0, 2.3);
@@ -2085,7 +2028,6 @@ import { VANS, spawnRebootCard } from './reboot.js';
               item,
             );
           }
-          by.mats.wood = Math.min(MAX_MATS, by.mats.wood + 30);
         }
         function updateChests(dt) {
           for (var i = 0; i < CHESTS.length; i++) {

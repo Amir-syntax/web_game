@@ -338,13 +338,8 @@ import { GAMETIME } from './main.js';
           fxSpark(d.x, d.gy + 1.2, d.z, 0xffd76a, 22, 3.6, 0.6);
           fxSmoke(d.x, d.gy + 0.6, d.z, 6, 1.4, 1.0, 1.0);
           dropLoot(d);
-          if (by) {
-            by.mats.wood = Math.min(MAX_MATS, by.mats.wood + 40);
-            by.mats.stone = Math.min(MAX_MATS, by.mats.stone + 40);
-            by.mats.metal = Math.min(MAX_MATS, by.mats.metal + 40);
-            if (by.isPlayer)
-              UI.banner("SUPPLY DROP LOOTED", "LEGENDARY GEAR ACQUIRED", 2.0);
-          }
+          if (by && by.isPlayer)
+            UI.banner("SUPPLY DROP LOOTED", "LEGENDARY GEAR ACQUIRED", 2.0);
           return true;
         }
 

@@ -8,9 +8,9 @@
    ========================================================================== */
 
         var CFG = {
-          MAP: 640,
+          MAP: 760,
           SEG: 200,
-          PLAY_R: 168,
+          PLAY_R: 205,
           SEA: 0,
           GRID: 4,
           MAXP: 25,
@@ -25,9 +25,7 @@
            DIVE: 55,
            GLIDE: 7,
            GLIDE_FWD: 18,
-          HARVEST_RANGE: 3.8,
-          BUILD_RANGE: 4.8,
-          VEH_MAX: 30,
+           VEH_MAX: 30,
           KNOCK_DRAIN: 2.4,
         };
 
@@ -1544,37 +1542,6 @@
             this.tone(1300, 1900, 0.08, "sine", 0.16);
             this.noise(0.1, 2600, 900, 1, 0.16, "bandpass");
           },
-          build: function () {
-            this.tone(420, 640, 0.07, "triangle", 0.17);
-            this.noise(0.09, 1500, 520, 1, 0.17, "bandpass");
-          },
-          edit: function () {
-            this.tone(700, 1100, 0.06, "square", 0.14);
-            this.noise(0.07, 2200, 900, 1, 0.14, "bandpass");
-          },
-          repair: function () {
-            this.tone(500, 900, 0.1, "triangle", 0.15);
-            this.tone(760, 1200, 0.1, "sine", 0.1, 0.08);
-          },
-          break: function () {
-            this.noise(0.24, 1800, 220, 1, 0.32, "lowpass");
-            this.noise(0.4, 900, 180, 1, 0.14, "lowpass", 0.05);
-          },
-          swing: function () {
-            this.noise(0.16, 900, 260, 1, 0.16, "bandpass");
-          },
-          harvest: function (kind) {
-            if (kind === "stone") {
-              this.tone(240, 150, 0.1, "square", 0.15);
-              this.noise(0.12, 1200, 300, 1, 0.2, "bandpass");
-            } else if (kind === "metal") {
-              this.tone(900, 500, 0.14, "triangle", 0.16);
-              this.noise(0.14, 2600, 900, 1, 0.18, "bandpass");
-            } else {
-              this.tone(180, 110, 0.12, "sawtooth", 0.15);
-              this.noise(0.14, 900, 240, 1, 0.22, "lowpass");
-            }
-          },
           pickup: function () {
             this.tone(700, 1250, 0.11, "triangle", 0.2);
             this.tone(1100, 1600, 0.1, "sine", 0.12, 0.06);
@@ -2538,8 +2505,8 @@
           /* cliff bands for dramatic verticality */
           base += Math.abs(Math.sin(nePeak * Math.PI * 2.5)) * neFactor * 12;
 
-          /* ---- volcanic peak at (-130, -130) ---- */
-          var volD = Math.sqrt((x + 130) * (x + 130) + (z + 130) * (z + 130));
+          /* ---- volcanic peak in the far NW corner ---- */
+          var volD = Math.sqrt((x + 160) * (x + 160) + (z + 150) * (z + 150));
           var vol = smoothstep(110, 15, volD);
           var volRidge = ridged(x * 0.02 + 1, z * 0.02 + 1, 5);
           base += vol * (volRidge * 40 + 18);
@@ -2564,15 +2531,15 @@
           base += smoothstep(0.42, 0.95, ridge) * 20;
 
           /* ---- island rim (cliff at edges) ---- */
-          var rim = smoothstep(150, 238, d);
+          var rim = smoothstep(178, 290, d);
           base = lerp(base, 82 + fbm(x * 0.011 + 2, z * 0.011 + 7, 2) * 26, rim);
           /* steep cliff face */
-          if (d > 160 && d < 210) {
-            var cliff = smoothstep(160, 190, d) * (1 - smoothstep(190, 220, d));
+          if (d > 188 && d < 255) {
+            var cliff = smoothstep(188, 218, d) * (1 - smoothstep(218, 248, d));
             base += cliff * 35;
           }
           /* sea (flat ocean floor beyond rim) */
-          var sea = smoothstep(252, 302, d);
+          var sea = smoothstep(305, 365, d);
           base = lerp(base, -11, sea);
           return base;
         }
@@ -2762,7 +2729,7 @@
           }
           return top;
         }
-        /* what are we standing on? drives footstep audio + harvest feedback */
+        /* what are we standing on? drives footstep audio */
         function surfaceAt(x, z, feetY) {
           var gi = groundInfo(x, z, feetY);
           if (gi.mat) return gi.mat;
@@ -3384,6 +3351,19 @@
             wallZ(gb, -w / 2, w / 2, y, d / 2, fh, 0.34, wallC, 0, 2.4, 2.0);
             wallX(gb, -d / 2, d / 2, y, -w / 2, fh, 0.34, wallC, 0, 2.4, 2.0);
             wallX(gb, -d / 2, d / 2, y, w / 2, fh, 0.34, wallC, 0, 2.4, 2.0);
+            /* interior stair from this floor to the one above — without it every
+       level above the ground floor was unreachable. Runs along the +z wall,
+       starting under the window so it does not clash with the door. */
+            if (f < floors - 1)
+              gb.ramp(
+                -w * 0.32,
+                d / 2 - 1.1,
+                y + 0.05,
+                w * 0.32,
+                d / 2 - 1.1,
+                y + fh - 0.05,
+                1.1,
+              );
             gb.add(
               0.5,
               fh,
@@ -3503,62 +3483,36 @@
           var dx = x1 - x0,
             dz = z1 - z0,
             len = Math.sqrt(dx * dx + dz * dz),
-            n = Math.floor(len / 2.2),
+            n = Math.max(1, Math.floor(len / 2.2)),
             ang = Math.atan2(dx, dz);
+          /* Posts and rails follow the ground per-segment. A single full-length rail
+     placed at the midpoint height left rails floating up to ~76m below the posts
+     when a fence corner stood on the island rim cliff. */
+          var prevX = x0,
+            prevZ = z0,
+            prevY = gb.groundY(x0, z0);
           for (var i = 0; i <= n; i++) {
-            var t = i / n;
+            var t = n === 0 ? 0 : i / n;
             var px = x0 + dx * t,
-              pz = z0 + dz * t;
-            gb.add(
-              0.16,
-              1.2,
-              0.16,
-              px,
-              gb.groundY(px, pz) + 0.6,
-              pz,
-              c,
-              0,
-              0,
-              0,
-              true,
-            );
+              pz = z0 + dz * t,
+              py = gb.groundY(px, pz);
+            gb.add(0.16, 1.2, 0.16, px, py + 0.6, pz, c, 0, 0, 0, true);
+            if (i > 0) {
+              var segLen = Math.sqrt(
+                (px - prevX) * (px - prevX) + (pz - prevZ) * (pz - prevZ),
+              );
+              var sx = (px + prevX) / 2,
+                sz = (pz + prevZ) / 2,
+                sy = (py + prevY) / 2;
+              gb.add(0.1, 0.2, segLen, sx, sy + 1.0, sz, c, ang, 0, 0, true);
+              gb.add(0.1, 0.2, segLen, sx, sy + 0.5, sz, c, ang, 0, 0, true);
+            }
+            prevX = px;
+            prevZ = pz;
+            prevY = py;
           }
-          var mx = (x0 + x1) / 2,
-            mz = (z0 + z1) / 2,
-            my = gb.groundY(mx, mz);
-          gb.add(0.1, 0.2, len, mx, my + 1.0, mz, c, ang, 0, 0, true);
-          gb.add(0.1, 0.2, len, mx, my + 0.5, mz, c, ang, 0, 0, true);
         }
-        function carProp(gb, x, y, z, c) {
-          gb.add(4.4, 0.9, 1.9, x, y + 0.75, z, c, 0, 0, 0, true);
-          gb.add(
-            2.4,
-            0.75,
-            1.75,
-            x - 0.15,
-            y + 1.5,
-            z,
-            col(0x9fd4ee),
-            0,
-            0,
-            0,
-            false,
-          );
-          gb.add(4.6, 0.3, 2.0, x, y + 0.32, z, col(0x1a1a1a), 0, 0, 0, false);
-          gb.add(
-            0.4,
-            0.7,
-            0.4,
-            x + 2.2,
-            y + 0.5,
-            z,
-            col(0xf0e6b0),
-            0,
-            0,
-            0,
-            false,
-          );
-        }
+        // carProp removed
         function streetLamp(gb, x, y, z, c) {
           gb.add(0.24, 6.4, 0.24, x, y + 3.2, z, c, 0, 0, 0, true);
           gb.add(1.5, 0.2, 0.24, x + 0.7, y + 6.3, z, c, 0, 0, 0, false);
@@ -3582,25 +3536,12 @@
         }
 
         /* ============================================================================
-   POI generation
-   ========================================================================== */
-        /* Pickaxe-harvestable material implied by the batch's surface material. Road
-   tarmac and foliage deliberately return null so they stay indestructible. */
-        function harvKindForMat(mat) {
-          if (mat === MAT.wood) return "wood";
-          if (mat === MAT.brick || mat === MAT.stone) return "stone";
-          if (mat === MAT.metal) return "metal";
-          return null;
-        }
-        /* How much pickaxe work a world piece takes before it breaks. Tuned so a wall
-   goes down in ~3 swings (pickaxe dmg 22). */
-        var WORLD_HP = { wood: 62, stone: 88, metal: 124 };
-        /* Materials awarded for breaking a piece, and per successful swing. */
-        var WORLD_YIELD = { wood: 34, stone: 26, metal: 20 };
-
+    POI generation
+    ========================================================================== */
         /* Collapse every vertex of a destroyed piece onto a single point. The triangles
    become degenerate and stop rasterising, which removes the piece visually
-   without touching the index buffer or issuing a draw call. */
+   without touching the index buffer or issuing a draw call. (Retained for the
+   collapse/explosion effects even though the pickaxe is gone.) */
         function collapseBoxRange(geo, vStart, vCount) {
           var pa = geo.attributes.position.array;
           var o0 = vStart * 3,
@@ -3622,61 +3563,10 @@
           mesh.castShadow = cast !== false;
           mesh.receiveShadow = true;
           worldGroup.add(mesh);
-          var hk = harvKindForMat(mat);
-          for (var i = 0; i < gb.boxes.length; i++) {
-            var bb = gb.boxes[i];
-            if (hk && bb.harv === undefined) {
-              bb.harv = hk;
-              bb.hp = WORLD_HP[hk];
-              bb.maxHp = bb.hp;
-              var it = gb.items[bb.itemIdx];
-              if (it)
-                bb.destruct = {
-                  geo: geo,
-                  vStart: it.vStart,
-                  vCount: it.vCount,
-                };
-            }
-            colliders.insert(bb);
-          }
+          for (var i = 0; i < gb.boxes.length; i++) colliders.insert(gb.boxes[i]);
           for (var j = 0; j < gb.plats.length; j++) insertPlatform(gb.plats[j]);
           for (var k = 0; k < gb.ramps.length; k++) insertRamp(gb.ramps[k]);
           return mesh;
-        }
-        /* One pickaxe swing against a harvestable world piece. Materials are awarded on
-   every swing; pieces that carry HP (i.e. real map structures) also take damage
-   and break apart for good once their HP runs out. Trees and rocks are inserted
-   straight into the collider grid without HP, so they stay infinite sources. */
-        function harvestStrike(ob, ch, hx, hy, hz, def) {
-          if (ob.dead) return;
-          var kind = ob.harv;
-          var gain = kind === "stone" ? 18 : kind === "metal" ? 14 : 22;
-          if (ch.mats[kind] < MAX_MATS) {
-            ch.mats[kind] = Math.min(MAX_MATS, ch.mats[kind] + gain);
-            if (ch.isPlayer) UI.floatGain(gain, kind);
-          }
-          Sfx.harvest(kind);
-          fxDebris(hx, hy, hz, kind, 4);
-          if (ob.hp === undefined) return;
-          ob.hp -= def.dmg;
-          if (ob.hp > 0) return;
-          /* ---- piece destroyed ---- */
-          ob.dead = true;
-          if (ob.plat) ob.plat.dead = true;
-          if (ob.destruct)
-            collapseBoxRange(
-              ob.destruct.geo,
-              ob.destruct.vStart,
-              ob.destruct.vCount,
-            );
-          var bonus = WORLD_YIELD[kind] || 20;
-          if (ch.mats[kind] < MAX_MATS) {
-            ch.mats[kind] = Math.min(MAX_MATS, ch.mats[kind] + bonus);
-            if (ch.isPlayer) UI.floatGain(bonus, kind);
-          }
-          fxDebris(hx, hy, hz, kind, 16);
-          Sfx.break();
-          if (nearPlayer(hx, hz, 70)) fxSmoke(hx, hy, hz, 2, 0.9, 0.7, 0.55);
         }
         function addLootSpot(x, z, y) {
           LOOTSPOTS.push({ x: x, y: y, z: z, used: false });
@@ -3754,17 +3644,6 @@
               oz,
               rnd(0.9, 1.5),
               pickOne(WOODC),
-            );
-          }
-          for (var v = 0; v < 4; v++) {
-            var vx = rnd(-30, 30),
-              vz = rnd(-30, 30);
-            carProp(
-              gb,
-              vx,
-              terrainHeightAt(cx + vx, cz + vz) - y,
-              vz,
-              pickOne([0x3f7fd6, 0xd6d6d6, 0xc23b3b, 0x2f2f2f]),
             );
           }
           for (var s = 0; s < 4; s++) {
@@ -4071,7 +3950,9 @@
             house(g2, 6.5, 6, 1, col(0xa07a4c), col(0x5e4230), {});
             commit(g2, MAT.wood, true);
           }
-          addChest(cx, cz, y + 21.6);
+          /* rooftop chest: sit it ON the roof slab (top of the 6*3.6 tower = 21.6,
+     slab 0.34 thick) and clear of the rooftop box, not buried inside it. */
+          addChest(cx + 3.5, cz - 3.5, y + 22.0);
           addChest(cx + 6, cz, y);
           for (var l = 0; l < 7; l++)
             addLootSpot(cx + rnd(-24, 24), cz + rnd(-24, 24), y);
@@ -4084,6 +3965,7 @@
               z = cz + Math.sin(a) * r;
             var y = terrainHeightAt(x, z);
             if (y < 1.6 || terrainSlope(x, z) > 0.5) continue;
+            if (nearRoad(x, z, 5)) continue;
             TREES.push({
               x: x,
               y: y,
@@ -4103,22 +3985,23 @@
         }
         /* --- NEW: airfield --- */
         function poiAirfield(cx, cz) {
-          /* flatten the runway strip first so the tarmac never floats or clips */
-          for (var s = -56; s <= 56; s += 7)
+          /* flatten the runway strip first so the tarmac never floats or clips.
+     The strip is kept short enough to stay inside the island rim. */
+          for (var s = -38; s <= 38; s += 7)
             flattenArea(cx, cz + s, 13.5, terrainRaw(cx, cz + s));
           var y = terrainHeightAt(cx, cz);
           var gb = new GeoBatch().origin(0, 0, 0, 0);
           /* runway */
           var rg = new GeoBatch().origin(cx, y + 0.06, cz, 0);
-          rg.add(22, 0.3, 110, 0, 0, 0, col(0x3a3d44), 0, 0, 0, true, true);
-          for (var d = 0; d < 12; d++)
+          rg.add(22, 0.3, 76, 0, 0, 0, col(0x3a3d44), 0, 0, 0, true, true);
+          for (var d = 0; d < 10; d++)
             rg.add(
               0.7,
               0.34,
               6,
               0,
               0.05,
-              -48 + d * 9,
+              -31.5 + d * 7,
               col(0xe8e8e8),
               0,
               0,
@@ -4202,6 +4085,7 @@
               tz = cz + Math.sin(a) * r;
             var ty = terrainHeightAt(tx, tz);
             if (ty < 1.6) continue;
+            if (nearRoad(tx, tz, 5)) continue;
             TREES.push({
               x: tx,
               y: ty,
@@ -4308,7 +4192,6 @@
               z = cz + rnd(-30, 30);
             var yy = terrainHeightAt(x, z);
             if (i % 3 === 0) {
-              carProp(gb, x, yy, z, pickOne(cols));
             } else if (i % 3 === 1) {
               gb.add(
                 rnd(3, 5),
@@ -4359,22 +4242,17 @@
 
         function definePOIs() {
           POIS = [
-            { n: "TILTED TOWERS", x: 0, z: -96, r: 44, f: poiTilted },
-            { n: "PLEASANT PARK", x: -104, z: -58, r: 40, f: poiHouses },
-            { n: "RETAIL ROW", x: 100, z: -52, r: 34, f: poiRetail },
-            { n: "SALTY SPRINGS", x: -76, z: 64, r: 30, f: poiHouses },
-            { n: "GREASY GROVE", x: 78, z: 84, r: 32, f: poiHouses },
-            { n: "TOMATO TOWN", x: 6, z: 44, r: 26, f: poiRetail },
-            { n: "DUSTY DEPOT", x: -24, z: 126, r: 30, f: poiFactory },
-            { n: "ANARCHY ACRES", x: -124, z: -124, r: 38, f: poiFarm },
-            { n: "LONELY LODGE", x: 138, z: 24, r: 30, f: poiTower },
-            { n: "WAILING WOODS", x: -142, z: 8, r: 44, f: poiWoods },
-            { n: "MOISTY MIRE", x: 112, z: -130, r: 34, f: poiRuins },
-            { n: "SNOBBY SHORES", x: -40, z: -152, r: 28, f: poiHouses },
-            { n: "LUCKY LANDING", x: -132, z: 118, r: 44, f: poiAirfield },
-            { n: "HAUNTED HILLS", x: 56, z: -150, r: 32, f: poiGraveyard },
-            { n: "SUNNY SHORES", x: 150, z: 96, r: 30, f: poiBeach },
-            { n: "JUNK JUNCTION", x: -58, z: -16, r: 28, f: poiJunk },
+            { n: "TILTED TOWERS", x: 0, z: -90, r: 40, f: poiTilted },
+            { n: "PLEASANT PARK", x: -118, z: -52, r: 34, f: poiHouses },
+            { n: "RETAIL ROW", x: 125, z: -70, r: 30, f: poiRetail },
+            { n: "DUSTY DEPOT", x: -28, z: 140, r: 28, f: poiFactory },
+            { n: "ANARCHY ACRES", x: -80, z: -120, r: 34, f: poiFarm },
+            { n: "LONELY LODGE", x: 150, z: -8, r: 28, f: poiTower },
+            { n: "WAILING WOODS", x: -138, z: 22, r: 34, f: poiWoods },
+            { n: "TOMATO TOWN", x: 0, z: 40, r: 24, f: poiRetail },
+            { n: "LUCKY LANDING", x: -95, z: 100, r: 38, f: poiAirfield },
+            { n: "HAUNTED HILLS", x: 70, z: -135, r: 28, f: poiGraveyard },
+            { n: "MISTY RUINS", x: 125, z: 88, r: 26, f: poiRuins },
           ];
         }
         function buildPOIs() {
@@ -4402,24 +4280,21 @@
         var ROADS = [
           [0, 1],
           [0, 2],
-          [0, 3],
-          [0, 4],
-          [0, 5],
-          [0, 15],
-          [0, 6],
-          [1, 7],
-          [1, 11],
-          [2, 13],
-          [2, 8],
+          [0, 7],
+          [0, 9],
+          [1, 4],
+          [1, 6],
+          [2, 5],
+          [2, 9],
+          [3, 7],
+          [3, 8],
           [3, 10],
-          [4, 14],
-          [6, 12],
-          [7, 9],
+          [4, 6],
+          [4, 9],
           [5, 10],
-          [8, 14],
-          [13, 11],
-          [12, 7],
-          [9, 1],
+          [6, 8],
+          [7, 10],
+          [8, 10],
         ];
         function roadPoint(x, z) {
           return terrainHeightAt(x, z);
@@ -4434,12 +4309,16 @@
               dz = B.z - A.z,
               len = Math.sqrt(dx * dx + dz * dz);
             var n = Math.max(2, Math.floor(len / 7));
-            /* flatten a corridor so the road never floats or clips */
+            /* flatten the corridor to a smooth linear ramp between the two POI pads.
+     Flattening every sample to its own current height made steep roads climb
+     in 3-6m steps that players could not walk up. */
+            var hA = terrainHeightAt(A.x, A.z),
+              hB = terrainHeightAt(B.x, B.z);
             for (var s = 0; s <= n; s++) {
               var t = s / n;
               var px = A.x + dx * t,
                 pz = A.z + dz * t;
-              flattenArea(px, pz, 6.0, terrainHeightAt(px, pz));
+              flattenArea(px, pz, 6.0, lerp(hA, hB, t));
             }
             var ang = Math.atan2(dx, dz);
             for (var q = 0; q < n; q++) {
@@ -4534,7 +4413,7 @@
           while (pine.length < 330 && tries < 14000) {
             tries++;
             var a = rnd(0, 6.28),
-              r = Math.sqrt(rnd(0, 1)) * 174;
+              r = Math.sqrt(rnd(0, 1)) * 198;
             var x = Math.cos(a) * r,
               z = Math.sin(a) * r;
             var y = terrainHeightAt(x, z);
@@ -4553,7 +4432,7 @@
           while (blob.length < 180 && tries < 10000) {
             tries++;
             var a2 = rnd(0, 6.28),
-              r2 = Math.sqrt(rnd(0, 1)) * 170;
+              r2 = Math.sqrt(rnd(0, 1)) * 200;
             var x2 = Math.cos(a2) * r2,
               z2 = Math.sin(a2) * r2;
             var y2 = terrainHeightAt(x2, z2);
@@ -4572,12 +4451,12 @@
           while (rocks.length < 170 && tries < 10000) {
             tries++;
             var a3 = rnd(0, 6.28),
-              r3 = Math.sqrt(rnd(0, 1)) * 178;
+              r3 = Math.sqrt(rnd(0, 1)) * 205;
             var x3 = Math.cos(a3) * r3,
               z3 = Math.sin(a3) * r3;
             var y3 = terrainHeightAt(x3, z3);
             if (y3 < 1.2) continue;
-            if (nearPOI(x3, z3, 1)) continue;
+            if (nearPOI(x3, z3, 1) || nearRoad(x3, z3, 5)) continue;
             rocks.push({
               x: x3,
               y: y3,
@@ -4590,12 +4469,12 @@
           while (bush.length < 460 && tries < 10000) {
             tries++;
             var a4 = rnd(0, 6.28),
-              r4 = Math.sqrt(rnd(0, 1)) * 176;
+              r4 = Math.sqrt(rnd(0, 1)) * 200;
             var x4 = Math.cos(a4) * r4,
               z4 = Math.sin(a4) * r4;
             var y4 = terrainHeightAt(x4, z4);
             if (y4 < 1.8 || y4 > 46) continue;
-            if (nearRoad(x4, z4, 4.0)) continue;
+            if (nearPOI(x4, z4, 2) || nearRoad(x4, z4, 4.0)) continue;
             bush.push({ x: x4, y: y4, z: z4, s: rnd(0.5, 1.25) });
           }
           for (var i = 0; i < TREES.length; i++) {
@@ -4616,13 +4495,13 @@
           while (tufts.length < 3200 && tries < 30000) {
             tries++;
             var a5 = rnd(0, 6.28),
-              r5 = Math.sqrt(rnd(0, 1)) * 168;
+              r5 = Math.sqrt(rnd(0, 1)) * 195;
             var x5 = Math.cos(a5) * r5,
               z5 = Math.sin(a5) * r5;
             var y5 = terrainHeightAt(x5, z5);
             if (y5 < 2.0 || y5 > 58) continue;
             if (terrainSlope(x5, z5) > 0.6) continue;
-            if (nearRoad(x5, z5, 4.4)) continue;
+            if (nearPOI(x5, z5, 1) || nearRoad(x5, z5, 4.4)) continue;
             tufts.push({
               x: x5,
               y: y5,
@@ -4686,7 +4565,6 @@
               maxY: o.y + 4.4 * o.s,
               minZ: o.z - 0.55,
               maxZ: o.z + 0.55,
-              harv: "wood",
             });
           }
           worldGroup.add(trunk);
@@ -4724,7 +4602,6 @@
               maxY: ob.y + 3.4 * ob.s,
               minZ: ob.z - 0.5,
               maxZ: ob.z + 0.5,
-              harv: "wood",
             });
           }
           worldGroup.add(bmesh);
@@ -4755,7 +4632,6 @@
                 maxY: od.y + 5 * od.s,
                 minZ: od.z - 0.4,
                 maxZ: od.z + 0.4,
-                harv: "wood",
               });
             }
             worldGroup.add(dmesh);
@@ -4789,7 +4665,6 @@
               maxY: orr.y + orr.s * 0.9,
               minZ: orr.z - orr.s * 0.9,
               maxZ: orr.z + orr.s * 0.9,
-              harv: "stone",
             });
           }
           worldGroup.add(rmesh);
@@ -4948,22 +4823,13 @@
           while (n < 52 && tries < 5000) {
             tries++;
             var a = rnd(0, 6.28),
-              r = Math.sqrt(rnd(0, 1)) * 166;
+              r = Math.sqrt(rnd(0, 1)) * 190;
             var x = Math.cos(a) * r,
               z = Math.sin(a) * r;
             var y = terrainHeightAt(x, z);
             if (y < 2.0 || terrainSlope(x, z) > 0.35) continue;
             if (nearPOI(x, z, 1) || nearRoad(x, z, 5)) continue;
-            var isCar = srnd() < 0.6;
-            if (isCar) {
-              carProp(
-                gb,
-                x,
-                y,
-                z,
-                pickOne([0x8a3a2f, 0x4a5a6a, 0x7a7a7a, 0x3a5a8a]),
-              );
-            } else {
+            {
               gb.add(
                 1.2,
                 1.5,
@@ -4991,7 +4857,7 @@
                 false,
               );
             }
-            var tag = isCar ? 1.9 : 0.9;
+            var tag = 0.9;
             colliders.insert({
               minX: x - tag,
               maxX: x + tag,
@@ -4999,7 +4865,6 @@
               maxY: y + 1.8,
               minZ: z - tag,
               maxZ: z + tag,
-              harv: "metal",
             });
             n++;
           }
@@ -5115,770 +4980,6 @@
           buildNavGrid();
         }
 
-// === build ===
-/* ==== 30_build.js ==== */
-        /* ============================================================================
-   30_BUILD — Fortnite-style grid building.
-   Walls / floors / ramps / cones, wall variants (window, door, half),
-   in-place editing, turbo build, ramp rush, repair and piece damage.
-   ========================================================================== */
-
-        var BUILDS = {};
-        var CELLIDX = {};
-        var GHOST = null,
-          GHOST_TYPE = null,
-          GHOST_VARIANT = null;
-        var BUILD_MODE = false,
-          BUILD_PIECE = "wall",
-          BUILD_MAT = "wood";
-        var BGEO = {},
-          BMAT = {};
-        var COST = 10,
-          MAX_MATS = 999;
-        var PIECE_HP = { wood: 150, stone: 300, metal: 500 };
-        var BUILD_CD = 0,
-          BUILD_HOLD = 0;
-        var TURBO_CD = 0.085,
-          NORMAL_CD = 0.16;
-        var EDIT_TARGET = null,
-          EDIT_CD = 0;
-        var REPAIR_CD = 0;
-
-        /* local-space sub-boxes: [w,h,d, ox,oy,oz] — piece origin is the piece centre */
-        var PIECE_DEFS = {
-          wall: [[4, 4, 0.3, 0, 0, 0]],
-          wallWin: [
-            [4, 1.3, 0.3, 0, -1.35, 0],
-            [4, 1.3, 0.3, 0, 1.35, 0],
-            [1.4, 1.4, 0.3, -1.3, 0, 0],
-            [1.4, 1.4, 0.3, 1.3, 0, 0],
-          ],
-          wallDoor: [
-            [4, 1.2, 0.3, 0, 1.4, 0],
-            [1.3, 2.8, 0.3, -1.35, -0.6, 0],
-            [1.3, 2.8, 0.3, 1.35, -0.6, 0],
-          ],
-          wallHalf: [[4, 2, 0.3, 0, -1, 0]],
-          floor: [[4, 0.3, 4, 0, 0, 0]],
-          ramp: [[4, 4, 4, 0, 0, 0]],
-          pyramid: [[4, 4, 4, 0, 0, 0]],
-        };
-        var WALL_VARIANTS = ["wall", "wallWin", "wallDoor", "wallHalf"];
-
-        function initBuildAssets() {
-          var G = CFG.GRID;
-          BGEO.wall = buildPieceGeo("wall");
-          BGEO.wallWin = buildPieceGeo("wallWin");
-          BGEO.wallDoor = buildPieceGeo("wallDoor");
-          BGEO.wallHalf = buildPieceGeo("wallHalf");
-          BGEO.floor = buildPieceGeo("floor");
-          var slope = G * Math.SQRT2;
-          var r = new THREE.BoxGeometry(slope, 0.28, G);
-          r.rotateZ(Math.PI / 4);
-          BGEO.ramp = r;
-          var p = new THREE.ConeGeometry(G * 0.707, G * 0.72, 4, 1);
-          p.rotateY(Math.PI / 4);
-          p.translate(0, G * 0.36, 0);
-          BGEO.pyramid = p;
-
-          BMAT.wood = new THREE.MeshStandardMaterial({
-            map: TEX.wood,
-            roughness: 0.85,
-          });
-          BMAT.stone = new THREE.MeshStandardMaterial({
-            map: TEX.stone,
-            roughness: 0.93,
-          });
-          BMAT.metal = new THREE.MeshStandardMaterial({
-            map: TEX.metal,
-            roughness: 0.42,
-            metalness: 0.6,
-          });
-          BMAT.dmg_wood = new THREE.MeshStandardMaterial({
-            map: TEX.wood,
-            roughness: 0.85,
-            emissive: col(0x4a1206),
-            emissiveIntensity: 0.55,
-          });
-          BMAT.dmg_stone = new THREE.MeshStandardMaterial({
-            map: TEX.stone,
-            roughness: 0.93,
-            emissive: col(0x4a1206),
-            emissiveIntensity: 0.55,
-          });
-          BMAT.dmg_metal = new THREE.MeshStandardMaterial({
-            map: TEX.metal,
-            roughness: 0.42,
-            metalness: 0.6,
-            emissive: col(0x4a1206),
-            emissiveIntensity: 0.55,
-          });
-          BMAT.ghostOk = new THREE.MeshBasicMaterial({
-            color: 0x6bffa8,
-            transparent: true,
-            opacity: 0.34,
-            depthWrite: false,
-          });
-          BMAT.ghostBad = new THREE.MeshBasicMaterial({
-            color: 0xff5b5b,
-            transparent: true,
-            opacity: 0.28,
-            depthWrite: false,
-          });
-          BMAT.ghostEdit = new THREE.MeshBasicMaterial({
-            color: 0x6bc4ff,
-            transparent: true,
-            opacity: 0.5,
-            depthWrite: false,
-          });
-        }
-        function buildPieceGeo(type) {
-          var def = PIECE_DEFS[type],
-            geos = [];
-          for (var i = 0; i < def.length; i++) {
-            var b = def[i];
-            var g = new THREE.BoxGeometry(b[0], b[1], b[2]);
-            g.translate(b[3], b[4], b[5]);
-            geos.push(g);
-          }
-          return mergeSimple(geos);
-        }
-        function matOf(name) {
-          return BMAT[name] || BMAT.wood;
-        }
-        function dmgMatOf(name) {
-          return BMAT["dmg_" + name] || BMAT.dmg_wood;
-        }
-
-        function cellKey(gx, gz, lvl) {
-          return gx + "_" + gz + "_" + lvl;
-        }
-        function idxAdd(gx, gz, lvl, d) {
-          var k = cellKey(gx, gz, lvl);
-          CELLIDX[k] = (CELLIDX[k] || 0) + d;
-          if (CELLIDX[k] <= 0) delete CELLIDX[k];
-        }
-        function hasPieceAt(gx, gz, lvl) {
-          return (CELLIDX[cellKey(gx, gz, lvl)] || 0) > 0;
-        }
-
-        /* ---------------- placement maths ---------------- */
-        function computePlacement(px, pz, feetY, dx, dz, pitch, type) {
-          var G = CFG.GRID;
-          var lvl = Math.round(feetY / G);
-          var adx = Math.abs(dx),
-            adz = Math.abs(dz);
-          var dxi = adx >= adz ? (dx >= 0 ? 1 : -1) : 0;
-          var dzi = adx >= adz ? 0 : dz >= 0 ? 1 : -1;
-          var cellX = Math.round(px / G),
-            cellZ = Math.round(pz / G);
-          var out = null;
-          if (type === "wall") {
-            var fx = cellX + dxi,
-              fz = cellZ + dzi;
-            if (dxi !== 0) {
-              var ax = Math.min(cellX, fx);
-              out = {
-                key: "WX" + ax + "_" + cellZ + "_" + lvl,
-                x: (ax + 0.5) * G,
-                z: cellZ * G,
-                ry: Math.PI / 2,
-                gx: cellX,
-                gz: cellZ,
-                dxi: dxi,
-                dzi: dzi,
-              };
-            } else {
-              var az = Math.min(cellZ, fz);
-              out = {
-                key: "WZ" + cellX + "_" + az + "_" + lvl,
-                x: cellX * G,
-                z: (az + 0.5) * G,
-                ry: 0,
-                gx: cellX,
-                gz: cellZ,
-                dxi: dxi,
-                dzi: dzi,
-              };
-            }
-            out.y = lvl * G + G / 2;
-          } else if (type === "floor") {
-            var tX = px + dx * G * 0.62,
-              tZ = pz + dz * G * 0.62;
-            if (pitch < -0.62) {
-              tX = px;
-              tZ = pz;
-            }
-            var cX = Math.round(tX / G),
-              cZ = Math.round(tZ / G);
-            out = {
-              key: "F" + cX + "_" + cZ + "_" + lvl,
-              x: cX * G,
-              z: cZ * G,
-              y: lvl * G - 0.15,
-              ry: 0,
-              gx: cX,
-              gz: cZ,
-              dxi: dxi,
-              dzi: dzi,
-            };
-          } else if (type === "ramp") {
-            var rX = Math.round((px + dx * G * 0.9) / G),
-              rZ = Math.round((pz + dz * G * 0.9) / G);
-            var ry =
-              dxi !== 0
-                ? dxi > 0
-                  ? 0
-                  : Math.PI
-                : dzi > 0
-                  ? -Math.PI / 2
-                  : Math.PI / 2;
-            out = {
-              key: "R" + rX + "_" + rZ + "_" + lvl + "_" + dxi + "_" + dzi,
-              x: rX * G,
-              z: rZ * G,
-              y: lvl * G + G / 2,
-              ry: ry,
-              gx: rX,
-              gz: rZ,
-              dxi: dxi,
-              dzi: dzi,
-            };
-          } else {
-            var pX = Math.round((px + dx * G * 0.62) / G),
-              pZ = Math.round((pz + dz * G * 0.62) / G);
-            out = {
-              key: "P" + pX + "_" + pZ + "_" + lvl,
-              x: pX * G,
-              z: pZ * G,
-              y: lvl * G,
-              ry: 0,
-              gx: pX,
-              gz: pZ,
-              dxi: dxi,
-              dzi: dzi,
-            };
-          }
-          out.type = type;
-          out.lvl = lvl;
-          return out;
-        }
-        function hasSupport(pl) {
-          var G = CFG.GRID,
-            lvl = pl.lvl;
-          var gy = terrainHeightAt(pl.gx * G, pl.gz * G);
-          if (pl.type === "wall") {
-            if (gy >= lvl * G - 1.6) return true;
-          } else {
-            if (Math.abs(gy - lvl * G) < 1.6) return true;
-          }
-          if (
-            hasPieceAt(pl.gx + 1, pl.gz, lvl) ||
-            hasPieceAt(pl.gx - 1, pl.gz, lvl) ||
-            hasPieceAt(pl.gx, pl.gz + 1, lvl) ||
-            hasPieceAt(pl.gx, pl.gz - 1, lvl)
-          )
-            return true;
-          if (
-            hasPieceAt(pl.gx, pl.gz, lvl - 1) ||
-            hasPieceAt(pl.gx, pl.gz, lvl + 1)
-          )
-            return true;
-          return false;
-        }
-        function placementValid(pl, ch) {
-          if (!pl) return false;
-          if (BUILDS[pl.key]) return false;
-          var d = dist2(ch.x, ch.z, pl.x, pl.z);
-          if (d > CFG.BUILD_RANGE) return false;
-          if (!hasSupport(pl)) return false;
-          if (
-            pl.type !== "wall" &&
-            pl.lvl * CFG.GRID > terrainHeightAt(pl.x, pl.z) + 64
-          )
-            return false;
-          return true;
-        }
-
-        /* ---------------- piece creation ---------------- */
-        function makePiece(pl, matName, owner, variant) {
-          var G = CFG.GRID,
-            rec = {};
-          var type = variant || pl.type;
-          rec.type = pl.type;
-          rec.variant = type;
-          rec.mat = matName;
-          rec.owner = owner;
-          rec.key = pl.key;
-          rec.hp = PIECE_HP[matName];
-          rec.maxHp = rec.hp;
-          rec.lvl = pl.lvl;
-          rec.gx = pl.gx;
-          rec.gz = pl.gz;
-          rec.x = pl.x;
-          rec.y = pl.y;
-          rec.z = pl.z;
-          rec.ry = pl.ry || 0;
-          var mesh = new THREE.Mesh(
-            BGEO[type] || BGEO[pl.type],
-            matOf(matName),
-          );
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-          mesh.position.set(pl.x, pl.y, pl.z);
-          mesh.rotation.y = pl.ry || 0;
-          worldGroup.add(mesh);
-          rec.mesh = mesh;
-
-          /* --- collision + walkable surfaces, one AABB per sub-box --- */
-          var def = PIECE_DEFS[type] || PIECE_DEFS[pl.type];
-          rec.boxes = [];
-          var c = Math.abs(Math.cos(rec.ry)),
-            s = Math.abs(Math.sin(rec.ry));
-          for (var i = 0; i < def.length; i++) {
-            var b = def[i];
-            var ox = b[3],
-              oz = b[5];
-            var wx = pl.x + ox * c + oz * s;
-            var wz = pl.z - ox * s + oz * c;
-            var wy = pl.y + b[4];
-            var hw = (b[0] * c + b[2] * s) / 2,
-              hd = (b[0] * s + b[2] * c) / 2,
-              hh = b[1] / 2;
-            var bb = {
-              minX: wx - hw,
-              maxX: wx + hw,
-              minY: wy - hh,
-              maxY: wy + hh,
-              minZ: wz - hd,
-              maxZ: wz + hd,
-              build: rec,
-            };
-            rec.boxes.push(bb);
-            if (pl.type !== "ramp") colliders.insert(bb);
-          }
-          rec.box = rec.boxes[0];
-
-          if (pl.type === "ramp") {
-            var dxi = pl.dxi,
-              dzi = pl.dzi;
-            if (dxi !== 0) {
-              var xa = pl.x - (dxi * G) / 2,
-                xb = pl.x + (dxi * G) / 2;
-              rec.ramp = {
-                x0: xa,
-                z0: pl.z,
-                h0: pl.lvl * G,
-                x1: xb,
-                z1: pl.z,
-                h1: (pl.lvl + 1) * G,
-                halfW: G / 2,
-                mat: matName,
-              };
-            } else {
-              var za = pl.z - (dzi * G) / 2,
-                zb = pl.z + (dzi * G) / 2;
-              rec.ramp = {
-                x0: pl.x,
-                z0: za,
-                h0: pl.lvl * G,
-                x1: pl.x,
-                z1: zb,
-                h1: (pl.lvl + 1) * G,
-                halfW: G / 2,
-                mat: matName,
-              };
-            }
-            insertRamp(rec.ramp);
-          } else if (pl.type === "floor") {
-            rec.plat = {
-              minX: pl.x - G / 2,
-              maxX: pl.x + G / 2,
-              minZ: pl.z - G / 2,
-              maxZ: pl.z + G / 2,
-              y: pl.lvl * G,
-              mat: matName,
-            };
-            insertPlatform(rec.plat);
-          } else if (pl.type === "pyramid") {
-            var top = pl.lvl * G + G * 0.72;
-            rec.plats = [];
-            var dirs = [
-              [1, 0],
-              [-1, 0],
-              [0, 1],
-              [0, -1],
-            ];
-            for (var k = 0; k < 4; k++) {
-              var dd = dirs[k];
-              var rr = {
-                x0: pl.x - (dd[0] * G) / 2,
-                z0: pl.z - (dd[1] * G) / 2,
-                h0: pl.lvl * G,
-                x1: pl.x,
-                z1: pl.z,
-                h1: top,
-                halfW: G / 2,
-                mat: matName,
-              };
-              rec.plats.push(rr);
-              insertRamp(rr);
-            }
-          } else {
-            /* walls give a walkable ledge so you can stand on top of them */
-            rec.plat = {
-              minX: pl.x - G / 2,
-              maxX: pl.x + G / 2,
-              minZ: pl.z - G / 2,
-              maxZ: pl.z + G / 2,
-              y: pl.y + G / 2,
-              mat: matName,
-            };
-            insertPlatform(rec.plat);
-          }
-          BUILDS[pl.key] = rec;
-          idxAdd(pl.gx, pl.gz, pl.lvl, 1);
-          return rec;
-        }
-        function placeBuild(pl, matName, owner, variant) {
-          if (!pl || BUILDS[pl.key]) return null;
-          if (!hasSupport(pl)) return null;
-          var rec = makePiece(pl, matName || "wood", owner, variant);
-          Sfx.build();
-          return rec;
-        }
-        function killPiece(rec, quiet) {
-          if (!rec || rec.dead) return;
-          rec.dead = true;
-          if (rec.mesh) {
-            worldGroup.remove(rec.mesh);
-            rec.mesh = null;
-          }
-          if (rec.boxes)
-            for (var i = 0; i < rec.boxes.length; i++) rec.boxes[i].dead = true;
-          if (rec.box) rec.box.dead = true;
-          if (rec.plat) rec.plat.dead = true;
-          if (rec.ramp) rec.ramp.dead = true;
-          if (rec.plats)
-            for (var j = 0; j < rec.plats.length; j++) rec.plats[j].dead = true;
-          idxAdd(rec.gx, rec.gz, rec.lvl, -1);
-          delete BUILDS[rec.key];
-          if (!quiet) Sfx.break();
-        }
-        function damageBuild(rec, dmg, by) {
-          if (!rec || rec.dead) return;
-          rec.hp -= dmg;
-          if (rec.mesh) {
-            var f = 1 - rec.hp / rec.maxHp;
-            rec.mesh.scale.setScalar(1 + f * 0.035);
-            rec.mesh.rotation.z = Math.sin(GAMETIME * 30) * f * 0.012;
-            rec.mesh.material = f > 0.35 ? dmgMatOf(rec.mat) : matOf(rec.mat);
-          }
-          if (rec.hp <= 0) {
-            var px = rec.x,
-              py = rec.y,
-              pz = rec.z;
-            var kind =
-              rec.mat === "wood"
-                ? "wood"
-                : rec.mat === "stone"
-                  ? "stone"
-                  : "metal";
-            fxDebris(px, py, pz, kind, 10);
-            addDecal(px, py - 1.9, pz, 0, 1, 0, 2.2, "scorch", 8);
-            killPiece(rec);
-          }
-        }
-        function clearAllBuilds() {
-          for (var k in BUILDS)
-            if (BUILDS.hasOwnProperty(k)) killPiece(BUILDS[k], true);
-          BUILDS = {};
-          CELLIDX = {};
-        }
-
-        /* ---------------- editing ---------------- */
-        function findEditTarget(ch) {
-          var ox, oy, oz;
-          if (ch.isPlayer && CAM.pos) {
-            ox = CAM.pos.x;
-            oy = CAM.pos.y;
-            oz = CAM.pos.z;
-            var r = raycastWorld(
-              { x: ox, y: oy, z: oz },
-              CAM.dir.x,
-              CAM.dir.y,
-              CAM.dir.z,
-              CFG.BUILD_RANGE + 3,
-            );
-            if (r.kind === "box" && r.obj && r.obj.build && !r.obj.build.dead)
-              return { rec: r.obj.build, t: r.t };
-            return null;
-          }
-          var dx = Math.sin(ch.yaw),
-            dz = Math.cos(ch.yaw);
-          var res = raycastWorld(
-            { x: ch.x, y: ch.y + 1.4, z: ch.z },
-            dx,
-            -0.1,
-            dz,
-            CFG.BUILD_RANGE + 2,
-          );
-          if (
-            res.kind === "box" &&
-            res.obj &&
-            res.obj.build &&
-            !res.obj.build.dead
-          )
-            return { rec: res.obj.build, t: res.t };
-          return null;
-        }
-        function cycleEdit(rec) {
-          if (!rec || rec.type !== "wall") return false;
-          var idx = WALL_VARIANTS.indexOf(rec.variant || "wall");
-          if (idx < 0) idx = 0;
-          var next = WALL_VARIANTS[(idx + 1) % WALL_VARIANTS.length];
-          return setVariant(rec, next);
-        }
-        function setVariant(rec, variant) {
-          if (!rec || rec.dead) return false;
-          if (rec.type !== "wall") return false;
-          if (rec.variant === variant) return true;
-          /* rebuild geometry + collision in place, keeping damage */
-          var pl = {
-            type: "wall",
-            lvl: rec.lvl,
-            gx: rec.gx,
-            gz: rec.gz,
-            x: rec.x,
-            y: rec.y,
-            z: rec.z,
-            ry: rec.ry,
-            key: rec.key,
-          };
-          var hp = rec.hp,
-            mat = rec.mat,
-            owner = rec.owner;
-          killPiece(rec, true);
-          var fresh = makePiece(pl, mat, owner, variant);
-          fresh.hp = hp;
-          if (fresh.mesh)
-            fresh.mesh.material =
-              1 - hp / fresh.maxHp > 0.35 ? dmgMatOf(mat) : matOf(mat);
-          Sfx.edit();
-          return true;
-        }
-        function repairPiece(rec, ch) {
-          if (!rec || rec.dead) return false;
-          if (rec.hp >= rec.maxHp) return false;
-          var missing = rec.maxHp - rec.hp;
-          var cost = Math.max(1, Math.ceil((missing / rec.maxHp) * COST * 1.4));
-          if (ch.mats[rec.mat] < cost) return false;
-          ch.mats[rec.mat] -= cost;
-          rec.hp = Math.min(rec.maxHp, rec.hp + rec.maxHp * 0.5);
-          if (rec.mesh) {
-            rec.mesh.scale.setScalar(1);
-            rec.mesh.rotation.z = 0;
-            rec.mesh.material =
-              1 - rec.hp / rec.maxHp > 0.35
-                ? dmgMatOf(rec.mat)
-                : matOf(rec.mat);
-          }
-          Sfx.repair();
-          if (ch.isPlayer) UI.floatGain(-cost, rec.mat);
-          return true;
-        }
-
-        /* ---------------- ghost preview ---------------- */
-        function updateGhost(ch, type, mat, variant) {
-          var geoType = variant || type;
-          if (!GHOST || GHOST_TYPE !== geoType) {
-            if (GHOST) {
-              worldGroup.remove(GHOST);
-              GHOST = null;
-            }
-            GHOST = new THREE.Mesh(BGEO[geoType] || BGEO[type], BMAT.ghostOk);
-            GHOST.renderOrder = 5;
-            worldGroup.add(GHOST);
-            GHOST_TYPE = geoType;
-          }
-          var pl = computePlacement(
-            ch.x,
-            ch.z,
-            ch.y,
-            ch.aimX,
-            ch.aimZ,
-            ch.pitch,
-            type,
-          );
-          var ok = placementValid(pl, ch) && ch.mats[mat] >= COST;
-          GHOST.visible = true;
-          GHOST.position.set(pl.x, pl.y, pl.z);
-          GHOST.rotation.y = pl.ry || 0;
-          GHOST.material = ok ? BMAT.ghostOk : BMAT.ghostBad;
-          return { pl: pl, ok: ok };
-        }
-        function hideGhost() {
-          if (GHOST) GHOST.visible = false;
-        }
-
-        /* ---------------- build actions (used by player + bots) ---------------- */
-        function tryPlace(ch, type, mat, variant) {
-          var pl = computePlacement(
-            ch.x,
-            ch.z,
-            ch.y,
-            ch.aimX,
-            ch.aimZ,
-            ch.pitch || 0,
-            type,
-          );
-          if (!pl || !placementValid(pl, ch)) return null;
-          if (ch.mats[mat] < COST) return null;
-          var rec = placeBuild(pl, mat, ch, variant);
-          if (rec) ch.mats[mat] -= COST;
-          return rec;
-        }
-        /* Fortnite's ramp-rush: place a ramp and a wall in front of it, twice */
-        function rampRush(ch, mat) {
-          var made = 0;
-          for (var step = 0; step < 2; step++) {
-            var baseY = ch.y + step * CFG.GRID;
-            var dx = ch.aimX,
-              dz = ch.aimZ;
-            var G = CFG.GRID;
-            var rX = Math.round((ch.x + dx * G * (0.9 + step * 1.1)) / G),
-              rZ = Math.round((ch.z + dz * G * (0.9 + step * 1.1)) / G);
-            var dxi = Math.abs(dx) >= Math.abs(dz) ? (dx >= 0 ? 1 : -1) : 0;
-            var dzi = Math.abs(dx) >= Math.abs(dz) ? 0 : dz >= 0 ? 1 : -1;
-            var lvl = Math.round(baseY / G);
-            var ry =
-              dxi !== 0
-                ? dxi > 0
-                  ? 0
-                  : Math.PI
-                : dzi > 0
-                  ? -Math.PI / 2
-                  : Math.PI / 2;
-            var plR = {
-              type: "ramp",
-              lvl: lvl,
-              gx: rX,
-              gz: rZ,
-              x: rX * G,
-              z: rZ * G,
-              y: lvl * G + G / 2,
-              ry: ry,
-              dxi: dxi,
-              dzi: dzi,
-              key: "R" + rX + "_" + rZ + "_" + lvl + "_" + dxi + "_" + dzi,
-            };
-            if (ch.mats[mat] >= COST && placementValid(plR, ch)) {
-              placeBuild(plR, mat, ch);
-              ch.mats[mat] -= COST;
-              made++;
-            }
-            var wX = Math.round((ch.x + dx * G * (1.4 + step * 1.1)) / G),
-              wZ = Math.round((ch.z + dz * G * (1.4 + step * 1.1)) / G);
-            var awx = Math.abs(dx) >= Math.abs(dz);
-            var wx, wz, wry, wkey;
-            if (awx) {
-              wx = Math.min(wX, wX + (dx >= 0 ? 1 : -1));
-              wz = wZ;
-              wry = Math.PI / 2;
-              wkey = "WX" + wx + "_" + wz + "_" + lvl;
-            } else {
-              wz = Math.min(wZ, wZ + (dz >= 0 ? 1 : -1));
-              wx = wX;
-              wry = 0;
-              wkey = "WZ" + wx + "_" + wz + "_" + lvl;
-            }
-            var plW = {
-              type: "wall",
-              lvl: lvl,
-              gx: wX,
-              gz: wZ,
-              x: awx ? (wx + 0.5) * G : wx * G,
-              z: awx ? wz * G : (wz + 0.5) * G,
-              y: lvl * G + G / 2,
-              ry: wry,
-              dxi: dxi,
-              dzi: dzi,
-              key: wkey,
-            };
-            if (ch.mats[mat] >= COST && placementValid(plW, ch)) {
-              placeBuild(plW, mat, ch);
-              ch.mats[mat] -= COST;
-              made++;
-            }
-          }
-          return made;
-        }
-        function updateBuild(dt, firing) {
-          if (!PC || !PC.alive) return;
-          if (BUILD_CD > 0) BUILD_CD -= dt;
-          if (EDIT_CD > 0) EDIT_CD -= dt;
-          if (REPAIR_CD > 0) REPAIR_CD -= dt;
-          if (!BUILD_MODE) {
-            hideGhost();
-            return;
-          }
-
-          /* edit targeting */
-          var tgt = findEditTarget(PC);
-          EDIT_TARGET = tgt ? tgt.rec : null;
-
-          var g = updateGhost(PC, BUILD_PIECE, BUILD_MAT, BUILT_VARIANT);
-          if (EDIT_TARGET && GHOST) GHOST.material = BMAT.ghostEdit;
-          if (firing && BUILD_CD <= 0) {
-            var turbo = BUILD_HOLD > 0.22;
-            if (g.ok) {
-              if (turbo && PC.sprinting && PC.mats[BUILD_MAT] >= COST * 4) {
-                var made = rampRush(PC, BUILD_MAT);
-                BUILD_CD = made ? TURBO_CD : NORMAL_CD;
-              } else {
-                var rec = placeBuild(g.pl, BUILD_MAT, PC, BUILT_VARIANT);
-                if (rec) {
-                  PC.mats[BUILD_MAT] -= COST;
-                  BUILD_CD = turbo ? TURBO_CD : NORMAL_CD;
-                } else BUILD_CD = NORMAL_CD;
-              }
-            } else if (PC.mats[BUILD_MAT] < COST) {
-              UI.showPrompt("NOT ENOUGH " + BUILD_MAT.toUpperCase(), 0.8);
-              BUILD_CD = 0.4;
-            } else BUILD_CD = NORMAL_CD;
-          }
-        }
-        var BUILT_VARIANT = null;
-        function setBuildVariant(v) {
-          BUILT_VARIANT = v;
-        }
-        function doEdit() {
-          if (EDIT_CD > 0) return;
-          EDIT_CD = 0.22;
-          var t = findEditTarget(PC);
-          if (!t || !t.rec) {
-            UI.showPrompt("NOTHING TO EDIT", 0.7);
-            return;
-          }
-          cycleEdit(t.rec);
-          UI.showPrompt(
-            "EDITED &middot; <b>" +
-              (t.rec.variant || "wall").replace("wall", "").toUpperCase() +
-              "</b>",
-            0.7,
-          );
-        }
-        function doRepair() {
-          if (REPAIR_CD > 0) return;
-          REPAIR_CD = 0.3;
-          var t = findEditTarget(PC);
-          if (!t || !t.rec) {
-            UI.showPrompt("NOTHING TO REPAIR", 0.7);
-            return;
-          }
-          if (!repairPiece(t.rec, PC)) UI.showPrompt("CANNOT REPAIR", 0.7);
-        }
-
 // === combat ===
 /* ==== 40_combat.js ==== */
         /* ============================================================================
@@ -5903,21 +5004,6 @@
         };
 
         var WEAPONS = {
-          pickaxe: {
-            id: "pickaxe",
-            name: "PICKAXE",
-            cls: "melee",
-            dmg: 22,
-            rate: 0.42,
-            range: 3.8,
-            spread: 0,
-            mag: 0,
-            reload: 0,
-            ammo: null,
-            head: 1.5,
-            auto: true,
-            icon: "\u26CF",
-          },
           pistol: {
             id: "pistol",
             name: "PISTOL",
@@ -6108,7 +5194,6 @@
         /* Grip class per weapon — which hold pose the animation rig uses. Keeping it
    in one table means adding a weapon only needs a line here. */
         var HOLD_CLASS = {
-          pickaxe: "axe",
           pistol: "pistol",
           smg: "rifle",
           tsmg: "rifle",
@@ -6246,12 +5331,7 @@
             g.add(c);
             return c;
           }
-          if (id === "pickaxe") {
-            box(0.09, 0.09, 1.2, 0, 0, 0.26, dark);
-            box(0.62, 0.075, 0.1, 0, 0.02, 0.88, metal);
-            box(0.1, 0.26, 0.1, 0, 0.11, 0.88, accent);
-            box(0.2, 0.05, 0.3, 0, -0.06, 0.02, grip);
-          } else if (id === "pistol") {
+          if (id === "pistol") {
             box(0.11, 0.17, 0.46, 0, 0, 0.17, metal);
             box(0.1, 0.21, 0.12, 0, -0.17, 0.02, grip, 0.16);
             box(0.06, 0.06, 0.22, 0, 0.04, 0.44, accent);
@@ -6797,8 +5877,6 @@
                   p.vy = (p.vy - 2 * dot * res.ny) * 0.42;
                   p.vz = (p.vz - 2 * dot * res.nz) * 0.42;
                   if (Math.abs(p.vy) < 1.4 && res.ny > 0.5) p.vy = 0;
-                  if (res.obj && res.obj.build)
-                    damageBuild(res.obj.build, 18, p.owner);
                   Sfx.step("metal");
                   if (len - res.t < 0.05) {
                     p.x += dx;
@@ -6851,16 +5929,6 @@
           }
           if (owner && owner.damageDealt !== undefined && dealt > 0)
             owner.damageDealt += dealt;
-          for (var k in BUILDS) {
-            if (!BUILDS.hasOwnProperty(k)) continue;
-            var b = BUILDS[k];
-            if (b.dead) continue;
-            var bd = dist2(b.x, b.z, x, z);
-            if (bd < radius + 1.6) {
-              var bf = 1 - bd / (radius + 1.6);
-              damageBuild(b, 220 * bf * bf, owner);
-            }
-          }
           for (var j = PROJECTILES.length - 1; j >= 0; j--) {
             var p = PROJECTILES[j];
             if (
@@ -6971,7 +6039,7 @@
                     ? 2.3
                     : 1.4,
             );
-            if (def.cls !== "melee" && def.cls !== "throw")
+            if (def.cls !== "throw")
               fxSmoke(mp.x, mp.y, mp.z, 1, 0.5, 0.5, 0.45);
           }
           if (def.projectile) {
@@ -7079,11 +6147,8 @@
                 hy2 = mp.y + sy * wallT,
                 hz = mp.z + sz * wallT;
               if (res.kind === "box" && res.obj) {
-                var ob = res.obj;
-                if (ob.build)
-                  damageBuild(ob.build, def.dmg * (def.pellets ? 1 : 0.9), ch);
-                else if (ob.harv && def.cls === "melee")
-                  harvestStrike(ob, ch, hx, hy2, hz, def);
+                /* harvesting and build-piece damage are gone with the pickaxe
+                   and the building kit -- a bullet now just sparks off the world */
               }
               var dc = res.kind === "terrain" ? 0xd8c48c : 0xbfbfbf;
               fxSpark(hx, hy2, hz, dc, 3, 1.4, 0.22);
@@ -7115,16 +6180,12 @@
                 );
             }
           }
-          if (def.cls === "melee") {
-            Sfx.swing();
-            ch.swingT = 0;
-            ch.swingDur = def.rate;
-          } else {
+          {
             Sfx.shot(def.cls, ch.isPlayer ? 0 : dist2(ch.x, ch.z, PC.x, PC.z));
             if (visible) fxShell(mp.x, mp.y - 0.1, mp.z, dx, dy, dz);
           }
           if (ch.isPlayer) {
-            if (def.cls !== "melee") PLAYER_STATS.shots++;
+            PLAYER_STATS.shots++;
             if (hitAny) PLAYER_STATS.hits++;
             UI.hitmark(hitAny, hitHead, hitChar, hitKilled);
             UI.kick(def.cls);
@@ -7411,9 +6472,7 @@
           if (tgt.buildGroup) {
             tgt.buildGroup.visible = false;
           }
-          if (tgt.vehicle) {
-            exitVehicle(tgt, true);
-          }
+          // vehicle removed from combat
           fxSpark(tgt.x, tgt.y + 1.0, tgt.z, 0xffd76a, 12, 3.2, 0.5);
           for (var i = 1; i < 6; i++) {
             var w = tgt.slots[i];
@@ -7451,13 +6510,6 @@
                 ammo: "light",
                 count: Math.min(60, tgt.ammo.light),
               },
-            );
-          if (tgt.mats.wood > 0)
-            spawnLoot(
-              tgt.x + rnd(-1.5, 1.5),
-              tgt.y + 0.4,
-              tgt.z + rnd(-1.5, 1.5),
-              { kind: "mat", mat: "wood", count: Math.min(120, tgt.mats.wood) },
             );
           spawnLoot(tgt.x + rnd(-1, 1), tgt.y + 0.4, tgt.z + rnd(-1, 1), {
             kind: "shield",
@@ -7698,8 +6750,8 @@
             /* Swap into the slot the player is actually holding. Previously this always
        took the first empty slot, so picking a weapon up while on weapon 4 landed
        it in slot 5 and yanked the selection there instead of replacing weapon 4.
-       Falls back to the first empty slot when the pickaxe is held, and to the
-       weakest-weapon swap when the inventory is full. */
+       Falls back to the first empty slot, and to the weakest-weapon swap when the
+       inventory is full. Slot 0 is the starting pistol and is never replaced. */
             if (ch.isPlayer && ch.slot > 0 && ch.slots[ch.slot]) slot = ch.slot;
             if (slot < 0)
               for (var i = 1; i < 6; i++)
@@ -7795,13 +6847,6 @@
               15,
               ch.heals[item.heal] +
                 (item.heal === "band" ? 3 : item.heal === "mini" ? 3 : 1),
-            );
-            return true;
-          }
-          if (item.kind === "mat") {
-            ch.mats[item.mat] = Math.min(
-              MAX_MATS,
-              ch.mats[item.mat] + item.count,
             );
             return true;
           }
@@ -7939,9 +6984,9 @@
             else if (r === 8) item = { kind: "heal", heal: "med" };
             else
               item = {
-                kind: "mat",
-                mat: pickOne(["wood", "stone", "metal"]),
-                count: 60,
+                kind: "ammo",
+                ammo: pickOne(["light", "medium", "shell", "heavy"]),
+                count: 30,
               };
             var a = rnd(0, 6.28),
               rr = rnd(1.0, 2.3);
@@ -7952,7 +6997,6 @@
               item,
             );
           }
-          by.mats.wood = Math.min(MAX_MATS, by.mats.wood + 30);
         }
         function updateChests(dt) {
           for (var i = 0; i < CHESTS.length; i++) {
@@ -8126,6 +7170,69 @@
           cone: new THREE.ConeGeometry(0.5, 1, 10),
         };
 
+        /* Procedural character textures. Built ONCE and shared by every rig --
+        25 characters x their own canvas would be a real memory cost for a
+        barely-visible detail. Both are authored grayscale-ish so the material's
+        own colour still tints them (map multiplies color). */
+        var CH_TEX = null;
+        function charTextures() {
+          if (CH_TEX) return CH_TEX;
+          /* cloth: a fine, low-contrast diagonal weave. The threads are deliberately
+             only ~10% lighter/darker than the ground so it reads as fabric texture
+             up close and dissolves into flat shading at combat distance. */
+          CH_TEX = {
+            cloth: makeTex(
+              128,
+              function (g, s) {
+                px(g, 0, 0, s, s, "#e6e9ee");
+                for (var y = 0; y < s; y += 4) {
+                  for (var x = 0; x < s; x += 4) {
+                    var v = 206 + ((rnd() * 34) | 0);
+                    px(g, x, y, 4, 4, "rgb(" + v + "," + v + "," + (v + 5) + ")");
+                  }
+                }
+                g.strokeStyle = "rgba(110,120,140,0.16)";
+                g.lineWidth = 1;
+                for (var d = -s; d < s; d += 6) {
+                  g.beginPath();
+                  g.moveTo(d, 0);
+                  g.lineTo(d + s, s);
+                  g.stroke();
+                }
+                g.strokeStyle = "rgba(255,255,255,0.10)";
+                for (var d2 = -s; d2 < s; d2 += 6) {
+                  g.beginPath();
+                  g.moveTo(d2 + 3, 0);
+                  g.lineTo(d2 + 3 + s, s);
+                  g.stroke();
+                }
+              },
+              6,
+            ),
+            /* skin: a mostly-even light ground with faint freckle/pore speckle and
+               soft blotching. Kept very subtle -- strong mottling would look like a
+               rash once it tiles across the hands and face. */
+            skin: makeTex(
+              128,
+              function (g, s) {
+                px(g, 0, 0, s, s, "#f4dcc8");
+                for (var i = 0; i < 1100; i++) {
+                  var x = rnd(0, s),
+                    y = rnd(0, s);
+                  var a = rnd(0.02, 0.09);
+                  if (rnd() < 0.55)
+                    g.fillStyle = "rgba(150,92,62," + a.toFixed(3) + ")";
+                  else g.fillStyle = "rgba(255,236,216," + a.toFixed(3) + ")";
+                  g.fillRect(x, y, rnd(1, 2.4), rnd(1, 2.4));
+                }
+              },
+              3,
+            ),
+          };
+          return CH_TEX;
+        }
+
+
         /* Hip height above the character's feet. The whole upper body is parented to
    a pivot at this height, so the animation can lean / twist / bob it without
    dragging the legs along. Shared by the rig builder and the animator. */
@@ -8154,17 +7261,28 @@
             gearStyle = (idx >> 1) % 3,
             hasCape = idx % 5 === 0;
           var g = new THREE.Group();
+          var CT = charTextures();
           var suit = new THREE.MeshStandardMaterial({
             color: col(skin.suit),
-            roughness: 0.74,
+            roughness: 0.78,
+            metalness: 0.05,
+            map: CT.cloth,
           });
           var suit2 = new THREE.MeshStandardMaterial({
             color: col(skin.suit2),
-            roughness: 0.7,
+            roughness: 0.72,
+            metalness: 0.05,
+            map: CT.cloth,
           });
+          /* Skin gets a faint emissive tint of its own colour -- a cheap stand-in
+             for subsurface scattering that stops faces and hands from going dead
+             and clay-like in shadow. */
           var skinM = new THREE.MeshStandardMaterial({
             color: col(skin.skin),
-            roughness: 0.6,
+            roughness: 0.62,
+            map: CT.skin,
+            emissive: col(skin.skin),
+            emissiveIntensity: 0.06,
           });
           var dark = new THREE.MeshStandardMaterial({
             color: col(0x23262e),
@@ -8178,20 +7296,51 @@
           });
           var hair = new THREE.MeshStandardMaterial({
             color: col(skin.hair),
-            roughness: 0.86,
+            roughness: 0.84,
           });
           var steel = new THREE.MeshStandardMaterial({
             color: col(0x9aa3ad),
-            metalness: 0.72,
-            roughness: 0.34,
+            metalness: 0.85,
+            roughness: 0.28,
           });
           var white = new THREE.MeshStandardMaterial({
             color: col(0xf2f4f8),
             roughness: 0.22,
           });
-          ch.mats3d = [suit, suit2, skinM, dark, acc, hair, steel, white];
+          /* --- eyes: the white is near-glossy (wet), the iris is a saturated
+             glassy disc, the pupil is black and shiny, and a tiny pure-white
+             specular dot sells the whole thing as a real eyeball. Iris colour is
+             picked deterministically per character so a lobby is not 25 identical
+             blue-eyed soldiers. */
+          var IRIS = [0x3f6fb8, 0x6a4a28, 0x3f7a52, 0x8a6a3a, 0x4a5f8a, 0x7a5a3a];
+          var irisCol = IRIS[(idx * 7 + 3) % IRIS.length];
+          var eyeW = new THREE.MeshStandardMaterial({
+            color: col(0xf4f6fa),
+            roughness: 0.18,
+            metalness: 0.0,
+          });
+          var irisM = new THREE.MeshStandardMaterial({
+            color: col(irisCol),
+            roughness: 0.28,
+            metalness: 0.1,
+            emissive: col(irisCol),
+            emissiveIntensity: 0.04,
+          });
+          var pupilM = new THREE.MeshStandardMaterial({
+            color: col(0x0a0c10),
+            roughness: 0.2,
+            metalness: 0.1,
+          });
+          var hiM = new THREE.MeshBasicMaterial({
+            color: col(0xffffff),
+          });
+          ch.mats3d = [
+            suit, suit2, skinM, dark, acc, hair, steel, white,
+            eyeW, irisM, pupilM,
+          ];
+          ch.eyeMats = [eyeW, irisM, pupilM, hiM];
           /* remember the intended glow so the hurt-flash can restore it instead of
-     permanently flattening the accent emissive to black */
+      permanently flattening the accent emissive to black */
           for (var mi = 0; mi < ch.mats3d.length; mi++) {
             var mm = ch.mats3d[mi];
             mm.userData.baseEm = mm.emissive
@@ -8200,6 +7349,7 @@
             mm.userData.baseEmI =
               mm.emissiveIntensity === undefined ? 1 : mm.emissiveIntensity;
           }
+
 
           /* ---------------- torso / gear ----------------
      Everything above the hips hangs off a `body` pivot sitting at hip height,
@@ -8528,58 +7678,113 @@
             0.07,
           ); /* ears */
           H.add(CH_GEO.box, skinM, 0.215, 0.12, 0, 0, 0, 0, 0.045, 0.1, 0.07);
+          /* --- eyes: white -> iris -> pupil -> specular catchlight, layered
+             front-to-back so the coloured iris reads as sitting INSIDE the eye. --- */
           H.add(
             CH_GEO.sph,
-            white,
+            eyeW,
             -0.078,
             0.145,
-            0.175,
+            0.17,
             0,
             0,
             0,
-            0.1,
-            0.085,
-            0.075,
-          ); /* eyes */
+            0.105,
+            0.09,
+            0.08,
+          ); /* left white */
           H.add(
             CH_GEO.sph,
-            white,
+            eyeW,
             0.078,
             0.145,
-            0.175,
+            0.17,
             0,
             0,
             0,
-            0.1,
-            0.085,
-            0.075,
-          );
+            0.105,
+            0.09,
+            0.08,
+          ); /* right white */
           H.add(
             CH_GEO.sph,
-            dark,
+            irisM,
             -0.078,
             0.145,
-            0.215,
+            0.216,
             0,
             0,
             0,
-            0.048,
-            0.048,
-            0.036,
-          ); /* pupils */
+            0.062,
+            0.062,
+            0.03,
+          ); /* left iris */
           H.add(
             CH_GEO.sph,
-            dark,
+            irisM,
             0.078,
             0.145,
-            0.215,
+            0.216,
             0,
             0,
             0,
-            0.048,
-            0.048,
-            0.036,
-          );
+            0.062,
+            0.062,
+            0.03,
+          ); /* right iris */
+          H.add(
+            CH_GEO.sph,
+            pupilM,
+            -0.078,
+            0.145,
+            0.23,
+            0,
+            0,
+            0,
+            0.032,
+            0.032,
+            0.02,
+          ); /* left pupil */
+          H.add(
+            CH_GEO.sph,
+            pupilM,
+            0.078,
+            0.145,
+            0.23,
+            0,
+            0,
+            0,
+            0.032,
+            0.032,
+            0.02,
+          ); /* right pupil */
+          H.add(
+            CH_GEO.sph,
+            hiM,
+            -0.092,
+            0.158,
+            0.238,
+            0,
+            0,
+            0,
+            0.02,
+            0.02,
+            0.012,
+          ); /* left catchlight */
+          H.add(
+            CH_GEO.sph,
+            hiM,
+            0.092,
+            0.158,
+            0.238,
+            0,
+            0,
+            0,
+            0.02,
+            0.02,
+            0.012,
+          ); /* right catchlight */
+
           H.add(
             CH_GEO.box,
             hair,
@@ -9218,7 +8423,6 @@
             pitch: 0,
             health: 100,
             shield: 0,
-            mats: { wood: isPlayer ? 120 : rndi(70, 240), stone: 0, metal: 0 },
             ammo: { light: 0, medium: 0, heavy: 0, shell: 0, rocket: 0 },
             heals: {
               band: isPlayer ? 0 : rndi(0, 3),
@@ -9227,7 +8431,7 @@
               pot: 0,
             },
             slots: [
-              { id: "pickaxe", rarity: 0, ammoInMag: 0 },
+              { id: "pistol", rarity: 0, ammoInMag: 16 },
               null,
               null,
               null,
@@ -9264,8 +8468,6 @@
             knockAnim: 0,
             landAnim: 0,
             useAnim: 0,
-            swingT: 1e9,
-            swingDur: 1,
             lastStepSign: 0,
             mantle: null,
             mantleAnim: 0,
@@ -9635,19 +8837,25 @@
           var hold = wdef ? wdef.hold : "axe";
           var gun = hold !== "axe";
           var hipY = CH_HIP;
+          /* headBobY is a small vertical offset the locomotion / idle branches write
+             further down. A real walker's gaze stays roughly level while the torso
+             bounces, so the head counter-bobs against the body; an idle character's
+             head rises and falls a hair with each breath. It is read here (one
+             frame behind, which is imperceptible) and each branch either sets it or
+             zeroes it, so no state ever inherits a stale offset. */
           /* The head rides on the torso pivot (so a lean carries it along and the
-     seated crouch pulls it down with the shoulders). Seated it tucks slightly
-     lower again so the tallest helmet still clears the car roof. Done up here
+      seated crouch pulls it down with the shoulders). Seated it tucks slightly
+      lower again so the tallest helmet still clears the car roof. Done up here
      so every branch below -- knocked, gliding, driving, on foot -- gets it. */
           if (L.head)
             L.head.position.y = damp(
               L.head.position.y,
-              ch.vehicle ? SEAT_HEAD : CH_HEAD,
+              (ch.vehicle ? SEAT_HEAD : CH_HEAD) + (ch.headBobY || 0),
               12,
               dt,
             );
           /* Weapons are stowed in a vehicle -- both because the hands are on the wheel
-     and because a held rifle/pickaxe is long enough to punch straight out
+      and because a held rifle is long enough to punch straight out
      through the roof. One line up here covers every branch below. */
           if (ch.weaponMesh) ch.weaponMesh.visible = !ch.vehicle;
 
@@ -9660,6 +8868,7 @@
 
           /* ============================ DOWNED ================================== */
           if (ch.knocked) {
+            ch.headBobY = 0;
             var ks = Math.sin(ch.animT * 3.0);
             L.legL.hip.rotation.x = damp(
               L.legL.hip.rotation.x,
@@ -9727,6 +8936,7 @@
 
           /* ======================= SKYDIVE / GLIDE ============================== */
           if (ch.state === "glide" || ch.state === "skydive") {
+            ch.headBobY = 0;
             var dive = ch.state === "skydive";
             var sway =
               Math.sin(ch.animT * (dive ? 3.0 : 1.5)) * (dive ? 0.05 : 0.1);
@@ -9853,81 +9063,8 @@
           }
 
           /* ============================= DRIVING ================================ */
-          if (ch.vehicle || ch.state === "vehicle") {
-            var isBoat = !!(ch.vehicle && ch.vehicle.type === "boat");
-            var wob =
-              Math.sin(ch.animT * 7) *
-              0.02 *
-              clamp(Math.abs(ch.vehicle ? ch.vehicle.speed : 0) / 12, 0, 1);
-            /* Seated: thighs forward and level, shins tucked so the feet stay inside
-       the chassis, hands out on the wheel. The torso pivot drops 0.35 so the
-       head clears the roof -- the rig has a long torso and short legs, so
-       without this the character's head pokes straight through it. */
-            L.legL.hip.rotation.x = damp(L.legL.hip.rotation.x, -1.55, 9, dt);
-            L.legR.hip.rotation.x = damp(L.legR.hip.rotation.x, -1.55, 9, dt);
-            L.legL.knee.rotation.x = damp(L.legL.knee.rotation.x, 0.35, 9, dt);
-            L.legR.knee.rotation.x = damp(L.legR.knee.rotation.x, 0.35, 9, dt);
-            L.legL.foot.rotation.x = damp(L.legL.foot.rotation.x, 0.15, 9, dt);
-            L.legR.foot.rotation.x = damp(L.legR.foot.rotation.x, 0.15, 9, dt);
-            L.armL.shoulder.rotation.x = damp(
-              L.armL.shoulder.rotation.x,
-              -1.36 + wob,
-              8,
-              dt,
-            );
-            L.armR.shoulder.rotation.x = damp(
-              L.armR.shoulder.rotation.x,
-              -1.36 - wob,
-              8,
-              dt,
-            );
-            L.armL.shoulder.rotation.z = damp(
-              L.armL.shoulder.rotation.z,
-              0.4,
-              8,
-              dt,
-            );
-            L.armR.shoulder.rotation.z = damp(
-              L.armR.shoulder.rotation.z,
-              -0.4,
-              8,
-              dt,
-            );
-            L.armL.elbow.rotation.x = damp(
-              L.armL.elbow.rotation.x,
-              -0.95,
-              8,
-              dt,
-            );
-            L.armR.elbow.rotation.x = damp(
-              L.armR.elbow.rotation.x,
-              -0.95,
-              8,
-              dt,
-            );
-            L.head.rotation.x = damp(L.head.rotation.x, 0, 6, dt);
-            L.head.rotation.y = damp(L.head.rotation.y, 0, 6, dt);
-            if (T) {
-              T.position.y = damp(T.position.y, SEAT_PIVOT, 8, dt);
-              T.position.x = damp(T.position.x, 0, 8, dt);
-              T.rotation.x = damp(T.rotation.x, -0.06, 8, dt);
-              T.rotation.y = damp(T.rotation.y, 0, 8, dt);
-              T.rotation.z = damp(T.rotation.z, 0, 8, dt);
-            }
-            /* Drop the mesh so the seated PELVIS lands exactly on the vehicle's
-       cushion, rather than guessing an offset from ch.y -- the two used to
-       disagree by 0.38 and the driver's head poked out through the roof.
-       ch.y tracks v.y + 1.0 (car) / +0.9 (boat), which is not a seat. */
-            var vv = ch.vehicle;
-            var seatY = isBoat ? VEH_SEAT_BOAT : VEH_SEAT_CAR;
-            var base = vv && isFinite(vv.y) ? vv.y : ch.y - 1.0;
-            ch.mesh.position.y = base + seatY - SEAT_PELVIS;
-            ch.mesh.rotation.y = ch.yaw;
-            ch.mesh.rotation.x = damp(ch.mesh.rotation.x, 0, 7, dt);
-            ch.mesh.rotation.z = damp(ch.mesh.rotation.z, 0, 7, dt);
-            applyHurtFlash(ch, dt);
-            return;
-          }
+          // vehicle system removed
+
 
           /* ============================ ON FOOT ================================= */
           ch.mesh.rotation.x = damp(ch.mesh.rotation.x, 0, 7, dt);
@@ -9947,7 +9084,8 @@
 
           if (!ch.grounded) {
             /* --- airborne: legs tuck on the way up, reach for the ground on the way
-       down; arms come out for balance --- */
+        down; arms come out for balance --- */
+            ch.headBobY = 0;
             var up = clamp(ch.vy / CFG.JUMP, 0, 1),
               dn = clamp(-ch.vy / 16, 0, 1);
             L.legL.hip.rotation.x = damp(
@@ -10085,16 +9223,27 @@
               12,
               dt,
             );
-            /* body: two vertical bobs per stride, hips riding over the stance foot */
-            baseY += (Math.abs(c) - 0.42) * 0.075 * amt;
+            /* body: two vertical bobs per stride, hips riding over the stance foot.
+               The shape is right (up at mid-stance, down at heel-strike) but the
+               amplitude is pushed a little higher than a strict walk so the stride
+               actually reads at third-person distance. */
+            var bob = (Math.abs(c) - 0.42) * 0.095 * amt;
+            baseY += bob;
+            /* the head counter-bobs against the torso -- about half the body's
+               travel, never all of it, or the neck goes rigid and robotic */
+            ch.headBobY = -bob * 0.55;
             tx = s * 0.03 * amt;
             twist = s * 0.17 * amt;
             lean = 0.11 * amt + sprintF * 0.2;
             roll += -s * 0.045 * amt;
           } else {
-            /* --- idle: slow weight shift, breathing, head slightly alive --- */
+            /* --- idle: slow weight shift, breathing, head slightly alive ---
+               Breathing is amplitude-doubled and slowed a touch -- the old 0.022
+               shrugged so fast and so little it was invisible, and the chest never
+               moved at all. */
             var sh = Math.sin(ch.animT * 0.55),
-              br = Math.sin(ch.animT * 1.9) * 0.022;
+              br = Math.sin(ch.animT * 1.35) * 0.045;
+            ch.headBobY = br * 0.4;
             L.legL.hip.rotation.x = damp(
               L.legL.hip.rotation.x,
               sh * 0.05,
@@ -10245,20 +9394,6 @@
               twist *= 0.35;
               roll *= 0.4;
             }
-          } else if (!gun) {
-            /* pickaxe: the left hand is free, so let the right arm hang naturally */
-            L.armR.shoulder.rotation.z = damp(
-              L.armR.shoulder.rotation.z,
-              -0.16,
-              8,
-              dt,
-            );
-            L.armR.elbow.rotation.x = damp(
-              L.armR.elbow.rotation.x,
-              -0.3,
-              8,
-              dt,
-            );
           }
 
           /* --- consuming a heal: the left hand comes up to the face --- */
@@ -10314,64 +9449,6 @@
             lean -= rc * 0.05;
           }
           if (ch.bloom > 0) ch.bloom = Math.max(0, ch.bloom - dt * 4.5);
-
-          /* --- pickaxe / melee swing: wind up, chop, recover --------------------
-     Nothing used to animate the melee attack at all -- the pickaxe just sat
-     in the hand while the sound played. This drives the right arm through a
-     three-phase arc and counter-rotates the torso into the chop. */
-          if (ch.swingT < ch.swingDur) {
-            ch.swingT += dt;
-            var st = clamp(ch.swingT / Math.max(0.06, ch.swingDur), 0, 1);
-            var wx, wex, wsz, wtw, wln;
-            if (st < 0.3) {
-              /* wind up, twist away */
-              var q1 = smooth01(st / 0.3);
-              wx = lerp(-0.3, 0.64, q1);
-              wex = lerp(-0.3, -1.72, q1);
-              wsz = lerp(-0.16, -0.56, q1);
-              wtw = lerp(0, -0.36, q1);
-              wln = lerp(lean, -0.08, q1);
-            } else if (st < 0.58) {
-              /* the chop itself */
-              var q2 = smooth01((st - 0.3) / 0.28);
-              wx = lerp(0.64, -1.98, q2);
-              wex = lerp(-1.72, -0.1, q2);
-              wsz = lerp(-0.56, 0.18, q2);
-              wtw = lerp(-0.36, 0.34, q2);
-              wln = lerp(-0.08, 0.32, q2);
-            } else {
-              /* recover to the carry pose */
-              var q3 = smooth01((st - 0.58) / 0.42);
-              wx = lerp(-1.98, -0.55, q3);
-              wex = lerp(-0.1, -0.48, q3);
-              wsz = lerp(0.18, -0.16, q3);
-              wtw = lerp(0.34, 0, q3);
-              wln = lerp(0.32, 0, q3);
-            }
-            L.armR.shoulder.rotation.x = wx;
-            L.armR.shoulder.rotation.z = wsz;
-            L.armR.elbow.rotation.x = wex;
-            L.armL.shoulder.rotation.x = damp(
-              L.armL.shoulder.rotation.x,
-              -0.5,
-              10,
-              dt,
-            );
-            L.armL.shoulder.rotation.z = damp(
-              L.armL.shoulder.rotation.z,
-              0.28,
-              10,
-              dt,
-            );
-            L.armL.elbow.rotation.x = damp(
-              L.armL.elbow.rotation.x,
-              -0.55,
-              10,
-              dt,
-            );
-            twist = wtw;
-            lean = wln;
-          }
 
           /* --- mantle: both hands slam onto the lip, then the body swings up and
      over. `mantleAnim` runs 1 -> 0 across the climb, so the pose below is
@@ -10563,7 +9640,8 @@
         /* ============================================================================
    Vehicles
    ========================================================================== */
-        var VEHICLES = [];
+        // VEHICLES removed
+        // VEHICLES removed
         var VMAT = null;
         function initVehicleMats() {
           if (VMAT) return;
@@ -10605,525 +9683,18 @@
             }),
           };
         }
-        function makeCarMesh(colorHex) {
-          initVehicleMats();
-          var g = new THREE.Group();
-          var body = VMAT.body.clone();
-          body.color = col(colorHex);
-          function b(w, h, d, x, y, z, m) {
-            var q = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m || body);
-            q.position.set(x, y, z);
-            q.castShadow = true;
-            q.receiveShadow = true;
-            g.add(q);
-            return q;
-          }
-          b(2.0, 0.8, 4.4, 0, 0.8, 0);
-          /* Cabin as a shell (roof + pillars) rather than one solid block, so the
-     seated driver is actually visible through the glass instead of being
-     buried inside the bodywork. Merged into a single mesh so the extra pieces
-     cost one draw call rather than seven. Roof height comes from VEH_ROOF_CAR
-     so it is guaranteed to clear the seated rig (see the SEAT_* block). */
-          var cab = new PartBag(g);
-          cab.add(
-            CH_GEO.box,
-            body,
-            0,
-            VEH_ROOF_CAR + 0.06,
-            -0.25,
-            0,
-            0,
-            0,
-            1.86,
-            0.12,
-            2.24,
-          ); /* roof */
-          cab.add(
-            CH_GEO.box,
-            body,
-            -0.86,
-            1.55,
-            0.78,
-            0,
-            0,
-            0,
-            0.14,
-            0.7,
-            0.16,
-          ); /* A pillars */
-          cab.add(CH_GEO.box, body, 0.86, 1.55, 0.78, 0, 0, 0, 0.14, 0.7, 0.16);
-          cab.add(
-            CH_GEO.box,
-            body,
-            -0.86,
-            1.55,
-            -1.28,
-            0,
-            0,
-            0,
-            0.14,
-            0.7,
-            0.16,
-          ); /* C pillars */
-          cab.add(
-            CH_GEO.box,
-            body,
-            0.86,
-            1.55,
-            -1.28,
-            0,
-            0,
-            0,
-            0.14,
-            0.7,
-            0.16,
-          );
-          cab.add(
-            CH_GEO.box,
-            body,
-            -0.86,
-            1.55,
-            -0.25,
-            0,
-            0,
-            0,
-            0.14,
-            0.68,
-            0.14,
-          ); /* B pillars */
-          cab.add(
-            CH_GEO.box,
-            body,
-            0.86,
-            1.55,
-            -0.25,
-            0,
-            0,
-            0,
-            0.14,
-            0.68,
-            0.14,
-          );
-          cab.flush();
-          b(1.7, 0.56, 0.12, 0, 1.58, 0.9, VMAT.glass);
-          b(1.7, 0.56, 0.12, 0, 1.58, -1.42, VMAT.glass);
-          b(0.12, 0.56, 1.9, -0.93, 1.58, -0.25, VMAT.glass);
-          b(0.12, 0.56, 1.9, 0.93, 1.58, -0.25, VMAT.glass);
-          b(1.9, 0.24, 4.5, 0, 0.42, 0, VMAT.dark);
-          /* seat cushion the driver actually sits on -- top must equal VEH_SEAT_CAR */
-          b(0.78, 0.18, 0.74, 0, VEH_SEAT_CAR - 0.09, -0.1, VMAT.dark);
-          b(0.78, 0.46, 0.14, 0, VEH_SEAT_CAR + 0.16, -0.44, VMAT.dark);
-          b(1.96, 0.16, 0.5, 0, 0.66, 2.24, VMAT.dark);
-          b(1.96, 0.16, 0.5, 0, 0.66, -2.24, VMAT.dark);
-          b(0.5, 0.22, 0.12, -0.66, 0.98, 2.3, VMAT.lamp);
-          b(0.5, 0.22, 0.12, 0.66, 0.98, 2.3, VMAT.lamp);
-          b(0.5, 0.18, 0.1, -0.66, 0.98, -2.3, VMAT.dark);
-          b(0.5, 0.18, 0.1, 0.66, 0.98, -2.3, VMAT.dark);
-          var wheels = [];
-          var wg = new THREE.CylinderGeometry(0.46, 0.46, 0.34, 14);
-          wg.rotateZ(Math.PI / 2);
-          var rg = new THREE.CylinderGeometry(0.24, 0.24, 0.36, 10);
-          rg.rotateZ(Math.PI / 2);
-          var pos = [
-            [-1.02, 1.42],
-            [1.02, 1.42],
-            [-1.02, -1.42],
-            [1.02, -1.42],
-          ];
-          for (var i = 0; i < 4; i++) {
-            var w = new THREE.Mesh(wg, VMAT.tyre);
-            w.position.set(pos[i][0], 0.46, pos[i][1]);
-            w.castShadow = true;
-            g.add(w);
-            var r = new THREE.Mesh(rg, VMAT.rim);
-            r.position.copy(w.position);
-            r.castShadow = false;
-            g.add(r);
-            wheels.push(w);
-          }
-          return { group: g, wheels: wheels, lamp: null };
-        }
-        function makeBoatMesh() {
-          initVehicleMats();
-          var g = new THREE.Group();
-          function b(w, h, d, x, y, z, m) {
-            var q = new THREE.Mesh(
-              new THREE.BoxGeometry(w, h, d),
-              m || VMAT.hull,
-            );
-            q.position.set(x, y, z);
-            q.castShadow = true;
-            q.receiveShadow = true;
-            g.add(q);
-            return q;
-          }
-          b(2.4, 0.7, 5.0, 0, 0.5, 0);
-          b(2.0, 0.5, 4.6, 0, 0.95, -0.1, VMAT.dark);
-          b(1.5, 0.5, 1.2, 0, 1.3, 1.1, VMAT.hull);
-          b(1.6, 0.5, 0.3, 0, 1.3, -2.1, VMAT.hull);
-          b(0.9, 0.6, 0.7, 0, 1.2, -2.6, VMAT.dark);
-          var p = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.08, 0.08, 1.5, 6),
-            VMAT.rim,
-          );
-          p.position.set(0, 1.75, -2.9);
-          g.add(p);
-          return { group: g, wheels: [], lamp: null };
-        }
-        function createVehicles() {
-          initVehicleMats();
-          var spots = [];
-          /* a few by each POI, a few along roads */
-          for (var i = 0; i < POIS.length; i++) {
-            var p = POIS[i];
-            var n = p.f === poiAirfield ? 2 : 1;
-            for (var k = 0; k < n; k++) {
-              var a = rnd(0, 6.28),
-                r = p.r * rnd(0.55, 0.95);
-              var x = p.x + Math.cos(a) * r,
-                z = p.z + Math.sin(a) * r;
-              if (terrainHeightAt(x, z) < CFG.SEA + 1.4) continue;
-              spots.push({ x: x, z: z });
-            }
-          }
-          for (var r2 = 0; r2 < ROADS.length; r2 += 2) {
-            var A = POIS[ROADS[r2][0]],
-              B = POIS[ROADS[r2][1]];
-            if (!A || !B) continue;
-            var t = rnd(0.25, 0.75);
-            var x2 = A.x + (B.x - A.x) * t,
-              z2 = A.z + (B.z - A.z) * t;
-            var nx = -(B.z - A.z),
-              nz = B.x - A.x;
-            var nl = Math.sqrt(nx * nx + nz * nz) || 1;
-            x2 += (nx / nl) * rnd(5, 8);
-            z2 += (nz / nl) * rnd(5, 8);
-            if (terrainHeightAt(x2, z2) > CFG.SEA + 1.2)
-              spots.push({ x: x2, z: z2 });
-          }
-          var colors = [
-            0x3f7fd6, 0xd6d6d6, 0xc23b3b, 0x2f2f2f, 0x2fae6a, 0xffd23f,
-            0x8a4fd0, 0xe8e2d0,
-          ];
-          for (var s = 0; s < spots.length; s++) {
-            var sp = spots[s];
-            var y = terrainHeightAt(sp.x, sp.z);
-            var mk = makeCarMesh(pickOne(colors));
-            mk.group.position.set(sp.x, y, sp.z);
-            mk.group.rotation.y = rnd(0, 6.28);
-            worldGroup.add(mk.group);
-            VEHICLES.push({
-              type: "car",
-              mesh: mk.group,
-              wheels: mk.wheels,
-              x: sp.x,
-              y: y,
-              z: sp.z,
-              yaw: mk.group.rotation.y,
-              speed: 0,
-              vy: 0,
-              driver: null,
-              boost: 1,
-              hp: 600,
-              wheelSpin: 0,
-              radius: 1.5,
-              len: 2.4,
-              hover: 0,
-              /* AABB collider for world collision */
-              col: {
-                minX: sp.x - 1.8, maxX: sp.x + 1.8,
-                minY: y - 0.5, maxY: y + 2.2,
-                minZ: sp.z - 1.3, maxZ: sp.z + 1.3,
-              },
-            });
-            colliders.insert(VEHICLES[VEHICLES.length - 1].col);
-          }
-          /* boats near the shoreline */
-          var made = 0,
-            tries = 0;
-          while (made < 7 && tries < 600) {
-            tries++;
-            var a2 = rnd(0, 6.28),
-              r3 = rnd(232, 262);
-            var bx = Math.cos(a2) * r3,
-              bz = Math.sin(a2) * r3;
-            if (terrainHeightAt(bx, bz) > CFG.SEA - 1.2) continue;
-            var bm = makeBoatMesh();
-            bm.group.position.set(bx, CFG.SEA - 0.35, bz);
-            bm.group.rotation.y = rnd(0, 6.28);
-            worldGroup.add(bm.group);
-            VEHICLES.push({
-              type: "boat",
-              mesh: bm.group,
-              wheels: [],
-              x: bx,
-              y: CFG.SEA - 0.35,
-              z: bz,
-              yaw: bm.group.rotation.y,
-              speed: 0,
-              vy: 0,
-              driver: null,
-              boost: 1,
-              hp: 500,
-              wheelSpin: 0,
-              radius: 1.4,
-              len: 2.2,
-              hover: 0,
-              col: {
-                minX: bx - 1.6, maxX: bx + 1.6,
-                minY: CFG.SEA - 0.8, maxY: CFG.SEA + 1.2,
-                minZ: bz - 1.2, maxZ: bz + 1.2,
-              },
-            });
-            colliders.insert(VEHICLES[VEHICLES.length - 1].col);
-            made++;
-          }
-        }
-        function updateVehicles(dt) {
-          for (var i = 0; i < VEHICLES.length; i++) {
-            var v = VEHICLES[i];
-            var thr = 0,
-              steer = 0,
-              boost = false;
-            if (v.driver) {
-              var d = v.driver;
-              thr = d.vehThrottle || 0;
-              steer = d.vehSteer || 0;
-              boost = !!d.vehBoost;
-            }
-            var isBoat = v.type === "boat";
-            var maxSpd = isBoat ? 26 : CFG.VEH_MAX;
-            if (boost) maxSpd *= 1.42;
-            var accel = isBoat ? 16 : 22;
-            v.speed += thr * accel * dt;
-            if (thr === 0) v.speed *= Math.exp(-(isBoat ? 1.1 : 1.6) * dt);
-            v.speed = clamp(v.speed, -maxSpd * 0.45, maxSpd);
-            var steerRate =
-              clamp(Math.abs(v.speed) / 9, 0, 1.15) * (isBoat ? 1.9 : 1.55);
-            /* Yaw is measured so that forward=(sin yaw, cos yaw); increasing yaw swings
-       forward from +Z toward +X, and +X is the driver's LEFT (the camera's right
-       vector is (-cos yaw, sin yaw)). So positive steer must DECREASE yaw for D
-       to turn right. */
-            v.yaw -= steer * steerRate * dt * Math.sign(v.speed >= 0 ? 1 : -1);
-            /* Camera-steering assist: while the player holds throttle without touching
-       A/D, gently ease the chassis toward the free-look direction so the mouse
-       is a meaningful driving input instead of pure decoration. */
-            if (
-              v.driver &&
-              v.driver.isPlayer &&
-              thr > 0.1 &&
-              Math.abs(steer) < 0.1 &&
-              Math.abs(v.speed) > 2.5
-            ) {
-              var camK = Math.min(1, Math.abs(v.speed) / 16) * 1.6;
-              v.yaw += angDiff(v.yaw, v.driver.yaw) * Math.min(camK * dt, 0.35);
-            }
-            var fx = Math.sin(v.yaw),
-              fz = Math.cos(v.yaw);
-            var nx = v.x + fx * v.speed * dt,
-              nz = v.z + fz * v.speed * dt;
-            /* collide with the world */
-            var p = { x: nx, z: nz };
-            collideXZ(p, v.radius, v.y + 0.2, v.y + 1.6);
-            /* also check platforms and ramps */
-            var hw = v.radius, hl = v.len / 2;
-            var cosV = Math.cos(v.yaw), sinV = Math.sin(v.yaw);
-            var vMinX = 1e9, vMaxX = -1e9, vMinZ = 1e9, vMaxZ = -1e9;
-            var vpts = [[hl,hw],[-hl,hw],[hl,-hw],[-hl,-hw]];
-            for (var vi = 0; vi < vpts.length; vi++) {
-              var vx = nx + vpts[vi][0] * cosV - vpts[vi][1] * sinV;
-              var vz = nz + vpts[vi][0] * sinV + vpts[vi][1] * cosV;
-              if (vx < vMinX) vMinX = vx; if (vx > vMaxX) vMaxX = vx;
-              if (vz < vMinZ) vMinZ = vz; if (vz > vMaxZ) vMaxZ = vz;
-            }
-            var vBotY = v.y - 0.5;
-            /* Check platforms */
-            if (platHash) {
-              var platCandidates = [];
-              platHash.query(nx, nz, platCandidates);
-              for (var pi = 0; pi < platCandidates.length; pi++) {
-                var pl = platCandidates[pi];
-                if (pl.dead) continue;
-                if (vMaxX < pl.minX || vMinX > pl.maxX || vMaxZ < pl.minZ || vMinZ > pl.maxZ) continue;
-                if (vBotY < pl.maxY && v.y + 2.5 > pl.minY) {
-                  p.x = nx; p.z = nz; v.speed = 0; break;
-                }
-              }
-            }
-            /* Check ramps */
-            if (!v.driver || !v.driver.isPlayer || v.speed <= 0) {
-              if (rampHash) {
-                var rampCandidates = [];
-                rampHash.query(nx, nz, rampCandidates);
-                for (var ri = 0; ri < rampCandidates.length; ri++) {
-                  var rm = rampCandidates[ri];
-                  if (rm.dead) continue;
-                  if (vMaxX < rm.minX || vMinX > rm.maxX || vMaxZ < rm.minZ || vMinZ > rm.maxZ) continue;
-                  if (vBotY < rm.maxY && v.y + 2.5 > rm.minY) {
-                    p.x = nx; p.z = nz; v.speed = 0;
-                  }
-                }
-              }
-            }
-            if (Math.abs(p.x - nx) > 0.01 || Math.abs(p.z - nz) > 0.01) {
-              if (Math.abs(v.speed) > 10)
-                fxDebris(v.x, v.y + 0.8, v.z, "metal", 5);
-              v.speed *= 0.24;
-              if (v.driver && v.driver.isPlayer)
-                FX.shake = Math.min(0.8, FX.shake + 0.35);
-            }
-            v.x = p.x;
-            v.z = p.z;
-            /* update vehicle AABB collider */
-            if (v.col) {
-              var hlen = v.len / 2, hwid = v.radius;
-              var cosY = Math.cos(v.yaw), sinY = Math.sin(v.yaw);
-              var cx = v.x, cz = v.z;
-              var minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
-              var pts = [
-                [hlen, hwid], [-hlen, hwid], [hlen, -hwid], [-hlen, -hwid]
-              ];
-              for (var pi = 0; pi < pts.length; pi++) {
-                var rx = cx + pts[pi][0] * cosY - pts[pi][1] * sinY;
-                var rz = cz + pts[pi][0] * sinY + pts[pi][1] * cosY;
-                if (rx < minX) minX = rx; if (rx > maxX) maxX = rx;
-                if (rz < minZ) minZ = rz; if (rz > maxZ) maxZ = rz;
-              }
-              v.col.minX = minX; v.col.maxX = maxX;
-              v.col.minZ = minZ; v.col.maxZ = maxZ;
-              v.col.minY = v.y - 0.5; v.col.maxY = v.y + (isBoat ? 1.2 : 2.2);
-            }
-            /* follow the ground */
-            if (isBoat) {
-              var depth = CFG.SEA - terrainHeightAt(v.x, v.z);
-              if (depth < 0.4) {
-                v.speed *= Math.exp(-4 * dt);
-              }
-              v.y = lerp(
-                v.y,
-                CFG.SEA - 0.35 + Math.sin(GAMETIME * 2.4) * 0.06,
-                0.2,
-              );
-            } else {
-              var fy = terrainHeightAt(v.x + fx * 1.6, v.z + fz * 1.6);
-              var ry2 = terrainHeightAt(v.x - fx * 1.6, v.z - fz * 1.6);
-              var ly = terrainHeightAt(v.x - fz * 1.0, v.z + fx * 1.0);
-              var ry3 = terrainHeightAt(v.x + fz * 1.0, v.z - fx * 1.0);
-              var target = (fy + ry2 + ly + ry3) / 4;
-              v.y = lerp(v.y, target, 1 - Math.exp(-9 * dt));
-              var pitch = Math.atan2(ry2 - fy, 3.2);
-              var roll = Math.atan2(ry3 - ly, 2.0);
-              v.mesh.rotation.x = lerp(v.mesh.rotation.x, pitch, 0.14);
-              v.mesh.rotation.z = lerp(v.mesh.rotation.z, roll, 0.14);
-            }
-            v.mesh.position.set(v.x, v.y, v.z);
-            v.mesh.rotation.y = v.yaw;
-            v.wheelSpin += v.speed * dt * 2.1;
-            for (var w = 0; w < v.wheels.length; w++)
-              v.wheels[w].rotation.x = -v.wheelSpin;
-            /* run over players */
-            if (Math.abs(v.speed) > 7) {
-              for (var c = 0; c < CHARS.length; c++) {
-                var ch = CHARS[c];
-                if (!ch.alive || ch.onBus || ch.vehicle === v) continue;
-                if (
-                  dist2(ch.x, ch.z, v.x, v.z) < v.radius + 0.7 &&
-                  Math.abs(ch.y - v.y) < 2.0
-                ) {
-                  damageChar(ch, 26, v.driver, false, { cls: "vehicle" });
-                  ch.vx += fx * v.speed * 0.6;
-                  ch.vz += fz * v.speed * 0.6;
-                  ch.vy = 6;
-                }
-              }
-            }
-            /* engine audio for the driver */
-            if (v.driver && v.driver.isPlayer) {
-              Sfx.setEngine(
-                clamp(Math.abs(v.speed) / maxSpd, 0, 1) * 0.9 +
-                  (thr !== 0 ? 0.2 : 0),
-              );
-            }
-            if (v.driver) {
-              v.driver.x = v.x;
-              v.driver.z = v.z;
-              v.driver.y = v.y + (v.type === "boat" ? 0.9 : 1.0);
-              v.driver.vx = v.vx || 0;
-              v.driver.vz = 0;
-              v.driver.vy = 0;
-              /* NEVER stomp the player's yaw here: it is the free-look camera yaw and is
-         driven by the mouse. Overwriting it welded the camera to the car heading
-         and made the mouse appear completely dead while driving. Bots keep the
-         old behaviour since their yaw is their facing direction. */
-              if (!v.driver.isPlayer) v.driver.yaw = v.yaw;
-              v.driver.grounded = true;
-            }
-          }
-        }
-        function nearestVehicle(ch) {
-          var best = null,
-            bd = 4.2;
-          for (var i = 0; i < VEHICLES.length; i++) {
-            var v = VEHICLES[i];
-            if (v.driver) continue;
-            var d = dist2(ch.x, ch.z, v.x, v.z);
-            if (d < bd && Math.abs(v.y - ch.y) < 3) {
-              bd = d;
-              best = v;
-            }
-          }
-          return best;
-        }
-        function enterVehicle(ch, v) {
-          if (!v || v.driver) return false;
-          ch.vehicle = v;
-          v.driver = ch;
-          ch.state = "vehicle";
-          ch.vx = 0;
-          ch.vz = 0;
-          ch.vy = 0;
-          ch.mantle = null;
-          ch.mantleAnim = 0;
-          /* Sync character position to vehicle seat so they don't fall through */
-          var seatY = v.type === "boat" ? VEH_SEAT_BOAT : VEH_SEAT_CAR;
-          ch.x = v.x;
-          ch.z = v.z;
-          ch.y = v.y + seatY - SEAT_PELVIS;
-          ch.mesh.visible = true;
-          if (ch.isPlayer) {
-            Sfx.vehicle(true);
-            Sfx.setEngine(0.15);
-            UI.showVeh(true);
-          }
-          return true;
-        }
-        function exitVehicle(ch, silent) {
-          var v = ch.vehicle;
-          if (!v) return;
-          v.driver = null;
-          ch.vehicle = null;
-          ch.state = "ground";
-          var fx = Math.sin(v.yaw),
-            fz = Math.cos(v.yaw);
-          var px = v.x - fz * 2.4,
-            pz = v.z + fx * 2.4;
-          var gy = groundAt(px, pz, v.y + 3);
-          ch.x = px;
-          ch.z = pz;
-          ch.y = gy + 0.2;
-          ch.vx = 0;
-          ch.vz = 0;
-          ch.vy = 0;
-          if (ch.isPlayer && !silent) {
-            Sfx.vehicle(false);
-            UI.showVeh(false);
-          }
-          if (ch.isPlayer) {
-            ch.vehThrottle = 0;
-            ch.vehSteer = 0;
-            ch.vehBoost = false;
-          }
-        }
+        // makeCarMesh/BoatMesh removed
+        // makeBoatMesh removed
+        function createVehicles() {}
+
+        function updateVehicles(dt) {}
+
+        function nearestVehicle(ch) { return null; }
+
+        function enterVehicle(ch, v) { return false; }
+
+        function exitVehicle(ch, silent) { ch.vehicle = null; ch.state = "ground"; }
+
 
         /* ============================================================================
    Player
@@ -11132,7 +9703,6 @@
           PC = createChar("YOU", true, 0, 0);
           PC.health = 100;
           PC.shield = 0;
-          PC.mats = { wood: 120, stone: 0, metal: 0 };
           return PC;
         }
         function updatePlayer(dt) {
@@ -11332,10 +9902,10 @@
             );
             return;
           }
-          var aiming = PC.alive && Input.aim && !BUILD_MODE && !PC.knocked;
+          var aiming = PC.alive && Input.aim && !PC.knocked;
           var w = PC.slots[PC.slot];
           var scoped = aiming && w && WEAPONS[w.id].scope;
-          var dist = BUILD_MODE ? 6.4 : scoped ? 2.0 : aiming ? 2.6 : 4.5;
+          var dist = scoped ? 2.0 : aiming ? 2.6 : 4.5;
           var height = ch.knocked ? 0.75 : 1.54;
           var yaw = PC.alive ? ch.yaw : PC.yaw;
           var pitch = PC.alive ? ch.pitch : PC.pitch;
@@ -11453,8 +10023,8 @@
 /* ==== 60_ai.js ==== */
         /* ============================================================================
    60_AI — bot brains. Navigation-grid A* pathfinding, personality archetypes,
-   squad play (no friendly fire, revives), looting, storm rotation, defensive
-   and offensive building, healing, and skydive targeting.
+   squad play (no friendly fire, revives), looting, storm rotation, healing,
+   and skydive targeting.
    Expensive work (pathfinding, line-of-sight, obstacle probes) runs on the
    low-frequency "think" tick; per-frame work stays cheap.
    ========================================================================== */
@@ -11547,12 +10117,11 @@
             var D = DIFF_TABLE[DIFF];
             var pers = pickOne([
               "rusher",
-              "builder",
               "camper",
               "sniper",
               "looter",
               "rusher",
-              "builder",
+              "camper",
             ]);
             var accBase =
               pers === "sniper"
@@ -11570,7 +10139,6 @@
               react: 0,
               accuracy: clamp(accBase + D.acc, 0.15, 0.95),
               underFire: 0,
-              buildCd: rnd(0, 2),
               healCd: 0,
               strafe: chance(0.5) ? 1 : -1,
               strafeT: rnd(0.6, 1.8),
@@ -11604,8 +10172,6 @@
               lastZ: 0,
               stillT: 0,
               aggro: pers === "rusher" ? 1.35 : pers === "camper" ? 0.7 : 1.0,
-              buildSkill:
-                pers === "builder" ? 1.5 : pers === "rusher" ? 0.9 : 0.7,
               preferred:
                 pers === "sniper"
                   ? ["sniper", "handcannon", "burst", "ar"]
@@ -11813,7 +10379,6 @@
           updateAutoReload(b, dt);
           var ai = b.ai;
           if (ai.underFire > 0) ai.underFire -= dt;
-          if (ai.buildCd > 0) ai.buildCd -= dt;
           if (ai.healCd > 0) ai.healCd -= dt;
           if (ai.jumpCd > 0) ai.jumpCd -= dt;
           if (ai.strafeT > 0) ai.strafeT -= dt;
@@ -12109,7 +10674,10 @@
           if (ai.mode === "fight" && e && e.alive && ai.react <= 0) {
             engage = true;
             var w = b.slots[b.slot];
-            var def = WEAPONS[w ? w.id : "pickaxe"];
+            /* without a pickaxe every bot always holds a gun, but a null slot can
+               still happen mid-swap -- fall back to the pistol's stats, which is
+               what an unarmed bot effectively has */
+            var def = WEAPONS[w ? w.id : "pistol"];
             var closeRange = def.cls === "shotgun";
             var range = Math.min(
               def.range * (closeRange ? 0.55 : 0.8),
@@ -12162,17 +10730,6 @@
               } else if (def.auto || b.fireCd <= 0) {
                 botShoot(b, e);
               }
-            }
-            /* defensive + offensive building */
-            if (ai.buildCd <= 0 && b.mats.wood >= COST * 2) {
-              var wantBuild = false;
-              if (ai.underFire > 0 && d > 6 && chance(0.6 * ai.buildSkill))
-                wantBuild = true;
-              else if (ai.personality === "rusher" && d > 10 && chance(0.25))
-                wantBuild = true;
-              else if (ai.personality === "builder" && chance(0.3))
-                wantBuild = true;
-              if (wantBuild) botBuild(b, e);
             }
             /* keep a preferred range for snipers */
             if (ai.personality === "sniper" && d < 16) {
@@ -12369,63 +10926,21 @@
             z: rnd(-1, 1) * k * moving,
           };
         }
-        function botBuild(b, e) {
-          var ai = b.ai;
-          var mat =
-            b.mats.metal > 120
-              ? "metal"
-              : b.mats.stone > 120
-                ? "stone"
-                : "wood";
-          if (b.mats[mat] < COST * 2) mat = "wood";
-          if (b.mats[mat] < COST * 2) return;
-          /* rushers push with ramps, defenders wall up */
-          if (ai.personality === "rusher" && e && chance(0.55)) {
-            if (rampRush(b, mat) > 0) {
-              ai.buildCd = rnd(1.4, 2.6) / ai.buildSkill;
-              return;
-            }
-          }
-          var dx = ai.engage ? e.x - b.x : b.aimX;
-          var dz = ai.engage ? e.z - b.z : b.aimZ;
-          var l = Math.sqrt(dx * dx + dz * dz) || 1;
-          dx /= l;
-          dz /= l;
-          var made = 0;
-          /* a wall plus a ramp behind it is the classic panic tower */
-          for (var i = 0; i < 3; i++) {
-            var type = i === 0 ? "wall" : i === 1 ? "ramp" : "floor";
-            var G = CFG.GRID;
-            var px = b.x + dx * G * (0.8 + i * 0.35),
-              pz = b.z + dz * G * (0.8 + i * 0.35);
-            var pl = computePlacement(b.x, b.z, b.y, b.aimX, b.aimZ, 0, type);
-            if (type === "floor")
-              pl = computePlacement(px, pz, b.y + G, dx, dz, -1, type);
-            if (pl && placementValid(pl, b) && b.mats[mat] >= COST) {
-              if (placeBuild(pl, mat, b)) {
-                b.mats[mat] -= COST;
-                made++;
-              }
-            }
-          }
-          if (made) ai.buildCd = rnd(1.1, 2.4) / ai.buildSkill;
-          else ai.buildCd = rnd(0.6, 1.2);
-        }
 
 // === storm ===
 /* ==== 70_storm.js ==== */
         /* ============================================================================
-   70_STORM â€” the shrinking circle, its volumetric wall shader, lightning,
+   70_STORM — the shrinking circle, its volumetric wall shader, lightning,
    the battle bus and the skydive / glider descent.
    ========================================================================== */
 
         var STORM_PHASES = [
-          { wait: 55, shrink: 44, r: 170, dmg: 1 },
-          { wait: 40, shrink: 36, r: 118, dmg: 2 },
-          { wait: 34, shrink: 32, r: 76, dmg: 5 },
-          { wait: 30, shrink: 28, r: 44, dmg: 8 },
-          { wait: 26, shrink: 24, r: 21, dmg: 10 },
-          { wait: 24, shrink: 22, r: 7, dmg: 12 },
+          { wait: 55, shrink: 44, r: 205, dmg: 1 },
+          { wait: 40, shrink: 36, r: 140, dmg: 2 },
+          { wait: 34, shrink: 32, r: 90, dmg: 5 },
+          { wait: 30, shrink: 28, r: 52, dmg: 8 },
+          { wait: 26, shrink: 24, r: 25, dmg: 10 },
+          { wait: 24, shrink: 22, r: 8, dmg: 12 },
         ];
         var STORM = {
           phase: 0,
@@ -12536,8 +11051,8 @@
           var maxOff = Math.max(0, STORM.r - nr) * 0.78;
           var a = rnd(0, 6.28),
             d = rnd(0.15, 1) * maxOff;
-          STORM.nx = clamp(STORM.cx + Math.cos(a) * d, -152, 152);
-          STORM.nz = clamp(STORM.cz + Math.sin(a) * d, -152, 152);
+          STORM.nx = clamp(STORM.cx + Math.cos(a) * d, -185, 185);
+          STORM.nz = clamp(STORM.cz + Math.sin(a) * d, -185, 185);
           STORM.nr = nr;
         }
         function updateStormVisual() {
@@ -12637,7 +11152,7 @@
                 c.state === "glide"
               )
                 continue;
-              if (c.vehicle) continue;
+              // vehicle check removed
               if (dist2(c.x, c.z, STORM.cx, STORM.cz) > STORM.r) {
                 c.shield = Math.max(0, c.shield - STORM.dmg * 0.5);
                 c.health -= STORM.dmg;
@@ -12873,7 +11388,7 @@
           ch.vy = Math.min(ch.vy, -6);
           if (!ch.gliderMesh) {
             var g = new THREE.Group();
-            /* Main canopy â€” semi-sphere shape */
+            /* Main canopy — semi-sphere shape */
             var canopyGeo = new THREE.SphereGeometry(1.6, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
             var canopyMat = new THREE.MeshStandardMaterial({
               color: col(0x3fd0ff),
@@ -13289,13 +11804,8 @@
           fxSpark(d.x, d.gy + 1.2, d.z, 0xffd76a, 22, 3.6, 0.6);
           fxSmoke(d.x, d.gy + 0.6, d.z, 6, 1.4, 1.0, 1.0);
           dropLoot(d);
-          if (by) {
-            by.mats.wood = Math.min(MAX_MATS, by.mats.wood + 40);
-            by.mats.stone = Math.min(MAX_MATS, by.mats.stone + 40);
-            by.mats.metal = Math.min(MAX_MATS, by.mats.metal + 40);
-            if (by.isPlayer)
-              UI.banner("SUPPLY DROP LOOTED", "LEGENDARY GEAR ACQUIRED", 2.0);
-          }
+          if (by && by.isPlayer)
+            UI.banner("SUPPLY DROP LOOTED", "LEGENDARY GEAR ACQUIRED", 2.0);
           return true;
         }
 
@@ -13321,8 +11831,8 @@
    76_REBOOT — reboot vans + reboot cards.
    When a squadmate is fully eliminated (not merely knocked) their reboot card
    drops where they died. A surviving teammate can carry it to one of the vans
-   dotted around the map and channel a reboot, bringing them back with nothing
-   but a pickaxe. Solo mode never produces cards.
+    dotted around the map and channel a reboot, bringing them back with nothing
+    but a pistol. Solo mode never produces cards.
    ========================================================================== */
 
         var VANS = [];
@@ -13455,8 +11965,8 @@
             var p = POIS[i];
             var a = rnd(0, 6.28);
             var r = p.r * 0.55 + 7.5;
-            var x = clamp(p.x + Math.cos(a) * r, -150, 150);
-            var z = clamp(p.z + Math.sin(a) * r, -150, 150);
+            var x = clamp(p.x + Math.cos(a) * r, -180, 180);
+            var z = clamp(p.z + Math.sin(a) * r, -180, 180);
             var y = terrainHeightAt(x, z);
             if (y < 2.0 || terrainSlope(x, z) > 0.5) {
               a += 1.9;
@@ -13601,9 +12111,9 @@
           mate.reloading = null;
           mate.fireCd = 0.7;
           mate.cards = 0;
-          /* reboots come back with nothing but a pickaxe — that is the whole point */
+          /* reboots come back with nothing but a pistol — that is the whole point */
           mate.slots = [
-            { id: "pickaxe", rarity: 0, ammoInMag: 0 },
+            { id: "pistol", rarity: 0, ammoInMag: 16 },
             null,
             null,
             null,
@@ -13611,8 +12121,7 @@
             null,
           ];
           mate.slot = 0;
-          mate.ammo = { light: 0, medium: 0, heavy: 0, shell: 0, rocket: 0 };
-          mate.mats = { wood: 0, stone: 0, metal: 0 };
+          mate.ammo = { light: 24, medium: 0, heavy: 0, shell: 0, rocket: 0 };
           mate.heals = { band: 0, mini: 0, med: 0, pot: 0 };
           if (mate.mesh) mate.mesh.visible = true;
           if (mate.buildGroup) mate.buildGroup.visible = true;
@@ -13770,19 +12279,13 @@
                 self.use = true;
                 self.usePress = true;
               } else if (k === "c") UI.healPress = true;
-              else if (k === "q") toggleBuildMode();
-              else if (k === "v") cycleBuildMat();
-              else if (k === "g") {
-                if (BUILD_MODE) doEdit();
-              } else if (k === "m" || k === "tab") {
+              else if (k === "m" || k === "tab") {
                 UI.toggleMap();
                 e.preventDefault();
               } else if (k === "i") UI.toggleInventory();
               else if (k >= "1" && k <= "6") {
                 var n = parseInt(k, 10);
-                if (BUILD_MODE && n <= 4)
-                  setBuildPiece(["wall", "floor", "ramp", "pyramid"][n - 1]);
-                else selectSlot(n - 1);
+                selectSlot(n - 1);
               }
               if (k === "tab") e.preventDefault();
             });
@@ -14023,9 +12526,6 @@
             bind("tbAim", function () {
               self.aim = !self.aim;
             });
-            bind("tbBuild", function () {
-              toggleBuildMode();
-            });
             bind(
               "tbReload",
               function () {
@@ -14096,26 +12596,6 @@
               bar.appendChild(d);
               this.slotEls.push(d);
             }
-            var mat = document.getElementById("mat");
-            var names = [
-              ["wood", "WOOD"],
-              ["stone", "STONE"],
-              ["metal", "METAL"],
-            ];
-            for (var m = 0; m < 3; m++) {
-              var e = document.createElement("div");
-              e.className = "mat " + names[m][0];
-              /* The chip used to be just a coloured square plus a number, so there was no
-         way to tell wood from stone from metal at a glance. Render the label. */
-              e.innerHTML =
-                '<i></i><b id="mat' +
-                names[m][1] +
-                '">0</b>' +
-                '<span style="font-size:9px;opacity:.6;letter-spacing:.4px;margin-left:3px">' +
-                names[m][1] +
-                "</span>";
-              mat.appendChild(e);
-            }
             var cons = document.getElementById("cons");
             var cnames = [
               ["band", "band", "BAND"],
@@ -14161,14 +12641,6 @@
                   "SPECTATING &mdash; CLICK OR <b>FIRE</b> TO SWITCH",
                   2.4,
                 );
-              });
-            document
-              .getElementById("buildBar")
-              .addEventListener("click", function (e) {
-                var t = e.target.closest(".bp");
-                if (!t) return;
-                if (t.dataset.piece === "edit") doEdit();
-                else setBuildPiece(t.dataset.piece);
               });
             bar.addEventListener("click", function (e) {
               var t = e.target.closest(".slot");
@@ -14231,9 +12703,6 @@
               "shieldText",
               "aliveCount",
               "elimCount",
-              "matWOOD",
-              "matSTONE",
-              "matMETAL",
               "cnsband",
               "cnsmini",
               "cnsmed",
@@ -14251,10 +12720,6 @@
               "banner",
               "hitmarker",
               "crosshair",
-              "buildInfo",
-              "vehHud",
-              "vehSpeed",
-              "vehBoost",
               "specBar",
               "specName",
               "compassTape",
@@ -14591,26 +13056,6 @@
               if (d.parentNode) d.parentNode.removeChild(d);
             }, 860);
           },
-          floatGain: function (amount, mat) {
-            var layer = document.getElementById("dmgLayer");
-            var d = document.createElement("div");
-            d.className = "dmgn";
-            d.style.color =
-              mat === "stone"
-                ? "#d8d8e2"
-                : mat === "metal"
-                  ? "#7fe0ff"
-                  : "#e0a86a";
-            d.style.fontSize = "15px";
-            d.textContent =
-              (amount > 0 ? "+" : "") + amount + " " + mat.toUpperCase();
-            d.style.left = "50%";
-            d.style.top = "60%";
-            layer.appendChild(d);
-            setTimeout(function () {
-              if (d.parentNode) d.parentNode.removeChild(d);
-            }, 860);
-          },
           hitFlash: function (v) {
             var e = document.getElementById("hitFlash");
             e.style.opacity = v;
@@ -14700,9 +13145,6 @@
           setReviveBar: function (v) {
             document.getElementById("reviveBar").firstElementChild.style.width =
               v * 100 + "%";
-          },
-          showVeh: function (on) {
-            this.el("vehHud").style.opacity = on ? 1 : 0;
           },
           showBusHint: function () {
             document.getElementById("busHint").classList.remove("hidden");
@@ -14806,7 +13248,7 @@
               var s = PC.slots[i];
               html +=
                 '<div class="line"><span>' +
-                (i === 0 ? "PICKAXE" : "SLOT " + i) +
+                "SLOT " + (i + 1) +
                 "</span><b>" +
                 (s
                   ? WEAPONS[s.id].name +
@@ -14830,20 +13272,6 @@
                 "</span><b>" +
                 PC.ammo[am[a][0]] +
                 "</b></div>";
-            html += "</div>";
-            html += '<div class="invCard"><h4>MATERIALS</h4>';
-            html +=
-              '<div class="line"><span>WOOD</span><b>' +
-              Math.round(PC.mats.wood) +
-              "</b></div>";
-            html +=
-              '<div class="line"><span>STONE</span><b>' +
-              Math.round(PC.mats.stone) +
-              "</b></div>";
-            html +=
-              '<div class="line"><span>METAL</span><b>' +
-              Math.round(PC.mats.metal) +
-              "</b></div>";
             html += "</div>";
             html += '<div class="invCard"><h4>CONSUMABLES</h4>';
             html +=
@@ -14902,9 +13330,6 @@
             E("shieldText").textContent = Math.max(0, Math.round(P.shield));
             E("aliveCount").textContent = ALIVE;
             E("elimCount").textContent = P.eliminations;
-            E("matWOOD").textContent = Math.round(P.mats.wood);
-            E("matSTONE").textContent = Math.round(P.mats.stone);
-            E("matMETAL").textContent = Math.round(P.mats.metal);
             E("cnsband").textContent = P.heals.band;
             E("cnsmini").textContent = P.heals.mini;
             E("cnsmed").textContent = P.heals.med;
@@ -14987,32 +13412,6 @@
               STORM.active && sd > STORM.r ? "#ff6b6b" : "#9dc4ff";
             E("lowhp").style.opacity =
               P.alive && P.health < 35 && !P.knocked ? 1 : 0;
-            E("buildInfo").classList.toggle("hidden", !BUILD_MODE);
-            document
-              .getElementById("buildBar")
-              .classList.toggle("hidden", !BUILD_MODE);
-            if (BUILD_MODE) {
-              var bi = this.el("buildInfo");
-              var txt =
-                "BUILD MODE &middot; <b>" +
-                BUILD_MAT.toUpperCase() +
-                "</b> &middot; <b>Q</b> EXIT &middot; <b>V</b> MATERIAL &middot; <b>G</b> EDIT &middot; <b>R</b> REPAIR";
-              if (EDIT_TARGET)
-                txt =
-                  "EDITING &middot; <b>G</b> CYCLE WINDOW / DOOR / HALF &middot; <b>R</b> REPAIR";
-              if (bi._t !== txt) {
-                bi.innerHTML = txt;
-                bi._t = txt;
-              }
-            }
-            if (P.vehicle && P === PC) {
-              this.el("vehSpeed").textContent = Math.round(
-                Math.abs(PC.vehicle.speed) * 3.6,
-              );
-              document.getElementById(
-                "vehBoost",
-              ).firstElementChild.style.width = (PC.vehBoost ? 0 : 100) + "%";
-            }
             if (!PC.alive && SPECTATING) this.showSpec(true);
             else this.showSpec(false);
             if (SPECTATE_TARGET && this.el("specName"))
@@ -15147,27 +13546,7 @@
               g.arc((BUS.x + ox) * sc, (BUS.z + ox) * sc, 8, 0, 6.3);
               g.fill();
             }
-            /* vehicles */
-            g.fillStyle = "rgba(255,143,63,.85)";
-            for (var vi = 0; vi < VEHICLES.length; vi++) {
-              var v = VEHICLES[vi];
-              if (dist2(v.x, v.z, viewChar().x, viewChar().z) > 140) continue;
-              g.fillRect((v.x + ox) * sc - 3, (v.z + ox) * sc - 3, 6, 6);
-            }
-            /* supply drops + reboot vans */
-            if (DROPS) {
-              for (var di = 0; di < DROPS.length; di++) {
-                var dp = DROPS[di];
-                if (dp.opened) continue;
-                g.fillStyle = dp.state === "landed" ? "#8fd0ff" : "#ffd76a";
-                g.beginPath();
-                g.arc((dp.x + ox) * sc, (dp.z + ox) * sc, 6, 0, 6.3);
-                g.fill();
-                g.strokeStyle = "#0a1a3c";
-                g.lineWidth = 2;
-                g.stroke();
-              }
-            }
+            // vehicles removed from minimap
             if (VANS) {
               g.fillStyle = "rgba(107,255,208,.9)";
               for (var vj = 0; vj < VANS.length; vj++) {
@@ -15330,24 +13709,7 @@
               g.fill();
             }
             g.fillStyle = "rgba(255,143,63,.9)";
-            for (var vi = 0; vi < VEHICLES.length; vi++) {
-              var v = VEHICLES[vi];
-              g.fillRect((v.x + ox) * sc - 5, (v.z + ox) * sc - 5, 10, 10);
-            }
-            /* supply drops + reboot vans */
-            if (DROPS) {
-              for (var di = 0; di < DROPS.length; di++) {
-                var dp = DROPS[di];
-                if (dp.opened) continue;
-                g.fillStyle = dp.state === "landed" ? "#8fd0ff" : "#ffd76a";
-                g.beginPath();
-                g.arc((dp.x + ox) * sc, (dp.z + ox) * sc, 10, 0, 6.3);
-                g.fill();
-                g.strokeStyle = "#0a1a3c";
-                g.lineWidth = 3;
-                g.stroke();
-              }
-            }
+            // vehicles removed from map
             if (VANS) {
               g.fillStyle = "rgba(107,255,208,.9)";
               for (var vj = 0; vj < VANS.length; vj++) {
@@ -15453,31 +13815,6 @@
         }
 
         /* ---------------- actions ---------------- */
-        function toggleBuildMode() {
-          if (!PC || !PC.alive || PC.knocked) return;
-          BUILD_MODE = !BUILD_MODE;
-          document
-            .getElementById("buildBar")
-            .classList.toggle("hidden", !BUILD_MODE);
-          if (!BUILD_MODE) {
-            hideGhost();
-            EDIT_TARGET = null;
-          }
-        }
-        function setBuildPiece(p) {
-          BUILD_PIECE = p;
-          var els = document.querySelectorAll(".bp");
-          for (var i = 0; i < els.length; i++)
-            els[i].classList.toggle("active", els[i].dataset.piece === p);
-        }
-        function cycleBuildMat() {
-          var order = ["wood", "stone", "metal"];
-          BUILD_MAT = order[(order.indexOf(BUILD_MAT) + 1) % 3];
-          UI.showPrompt(
-            "BUILD MATERIAL: <b>" + BUILD_MAT.toUpperCase() + "</b>",
-            1.2,
-          );
-        }
         function selectSlot(i) {
           if (!PC || i < 0 || i > 5) return;
           PC.slot = i;
@@ -15541,7 +13878,6 @@
         function resetMatch() {
           MODE = SETTINGS.mode || "solo";
           TEAM_SIZE = MODE === "solo" ? 1 : MODE === "duo" ? 2 : 4;
-          clearAllBuilds();
           while (LOOT.length) removeLoot(LOOT[0]);
           while (PROJECTILES.length) PROJECTILES.pop();
           for (var i = 0; i < CHESTS.length; i++) {
@@ -15550,13 +13886,7 @@
             if (c.lid) c.lid.rotation.x = 0;
             if (c.spr) c.spr.visible = true;
           }
-          for (var v = 0; v < VEHICLES.length; v++) {
-            var veh = VEHICLES[v];
-            veh.driver = null;
-            veh.speed = 0;
-            veh.mesh.rotation.x = 0;
-            veh.mesh.rotation.z = 0;
-          }
+          // vehicle cleanup removed
           for (var j = 0; j < CHARS.length; j++) {
             var ch = CHARS[j];
             if (ch.mesh) worldGroup.remove(ch.mesh);
@@ -15575,13 +13905,13 @@
           resetBus();
           resetDrops();
           resetReboot();
-          BUILD_MODE = false;
-          document.getElementById("buildBar").classList.add("hidden");
-          hideGhost();
           PC.state = "bus";
           PC.onBus = true;
+          /* The pickaxe and the whole building kit are gone, so everyone drops in
+             with a common pistol -- enough to defend the landing, not enough to
+             skip looting. */
           PC.slots = [
-            { id: "pickaxe", rarity: 0, ammoInMag: 0 },
+            { id: "pistol", rarity: 0, ammoInMag: 16 },
             null,
             null,
             null,
@@ -15593,18 +13923,16 @@
           PC.shield = 0;
           PC.eliminations = 0;
           PC.damageDealt = 0;
-          PC.mats = { wood: 250, stone: 100, metal: 50 };
           PC.heals = { band: 5, mini: 3, med: 0, pot: 0 };
           PC.ammo = { light: 150, medium: 120, heavy: 15, shell: 24, rocket: 4 };
           PC.knocked = false;
           PC.bleed = 0;
-          PC.vehicle = null;
+          // PC.vehicle = null; removed
           attachWeapon(PC);
           UI.setStormOverlay(0);
           UI.setGlider(false);
           UI.hidePrompt();
           UI.showRevive(false);
-          UI.showVeh(false);
           UI.setScope(false);
           PLAYER_STATS = { shots: 0, hits: 0, dist: 0 };
           UI.closeOverlays();
@@ -15672,12 +14000,11 @@
             "#" + PC.placement + " OF " + CFG.MAXP,
             2.6,
           );
-          Sfx.vehicle(false);
+          // Sfx.vehicle(false); removed
           Sfx.setStorm(0);
           Sfx.defeat();
           UI.setStormOverlay(0);
           UI.setScope(false);
-          UI.showVeh(false);
           UI.showRevive(false);
           SPECTATE_TARGET = null;
           pickSpectateTarget();
@@ -15698,7 +14025,7 @@
           MATCH_OVER = true; /* stops the world even if the player is still spectating */
           SPECTATING = false;
           Sfx.setStorm(0);
-          Sfx.vehicle(false);
+          // Sfx.vehicle(false); removed
           var win =
             MODE === "solo"
               ? PC.alive && ALIVE === 1
@@ -15745,9 +14072,6 @@
             "<span>ACCURACY</span><b>" +
             acc +
             "%</b>" +
-            "<span>MATERIALS USED</span><b>" +
-            Math.round(PC.mats.wood + PC.mats.stone + PC.mats.metal) +
-            "</b>" +
             "<span>DISTANCE</span><b>" +
             Math.round(PLAYER_STATS.dist) +
             " m</b>" +
@@ -15768,8 +14092,6 @@
           if (!SETTINGS.aimAssist) return;
           if (!(IS_MOBILE || SETTINGS.autofire || Input.aim || Input.fire)) return;
           if (!PC.alive || PC.knocked) return;
-          if (PC.vehicle || BUILD_MODE)
-            return; /* never tug the camera while driving/building */
           var best = null,
             bd = 1e9,
             maxAaDist = 130;
@@ -15823,24 +14145,10 @@
             return;
           }
           PC.aiming =
-            (Input.aim || (IS_MOBILE && Input.fire && SETTINGS.autofire)) &&
-            !BUILD_MODE;
+            (Input.aim || (IS_MOBILE && Input.fire && SETTINGS.autofire));
           PC.sprinting = Input.sprint && !PC.aiming && Input.axisZ > 0.1;
           PC.aimSpread = PC.aiming ? 0.2 : PC.sprinting ? 1.1 : 0.65;
 
-          if (PC.vehicle) {
-            PC.vehThrottle = Input.axisZ;
-            PC.vehSteer = Input.axisX;
-            PC.vehBoost = Input.sprint;
-            if (Input.usePress) {
-              exitVehicle(PC);
-              Input.usePress = false;
-            }
-            Input.firePress = false;
-            hideGhost();
-            UI.setScope(false);
-            return;
-          }
           if (Input.wheel !== 0) {
             selectSlot((PC.slot + Input.wheel + 6) % 6);
             Input.wheel = 0;
@@ -15855,26 +14163,18 @@
           }
           if (PC.using && (Input.firePress || Input.jump)) PC.using = null;
 
-          if (BUILD_MODE) {
-            if (Input.fire) BUILD_HOLD += dt;
-            else BUILD_HOLD = 0;
-            updateBuild(dt, Input.fire);
-          } else {
-            hideGhost();
-            BUILD_HOLD = 0;
-            if (Input.fire) {
-              var w = PC.slots[PC.slot];
-              if (w) {
-                var def = WEAPONS[w.id];
-                if (def.auto || Input.firePress || SETTINGS.autofire)
-                  fireWeapon(PC, CAM.aim.x, CAM.aim.y, CAM.aim.z, true);
-              }
+          if (Input.fire) {
+            var w = PC.slots[PC.slot];
+            if (w) {
+              var def = WEAPONS[w.id];
+              if (def.auto || Input.firePress || SETTINGS.autofire)
+                fireWeapon(PC, CAM.aim.x, CAM.aim.y, CAM.aim.z, true);
             }
           }
           Input.firePress = false;
 
-          /* convenience auto-pickup of ammo & materials */
-          if (!BUILD_MODE) {
+          /* convenience auto-pickup of ammo */
+          {
             for (var li = 0; li < LOOT.length; li++) {
               var lt = LOOT[li];
               if (
@@ -15896,9 +14196,8 @@
               }
             }
           }
-          /* interaction: chests, loot, downed teammates, vehicles */
+          /* interaction: chests, loot, downed teammates */
           var near = nearestInteract(PC);
-          var veh = nearestVehicle(PC);
           var promptText = null,
             action = null;
           if (near) {
@@ -15940,11 +14239,8 @@
               promptText = "<b>F</b> PICK UP " + ntxt;
               action = "loot";
             }
-          } else if (veh) {
-            promptText =
-              "<b>F</b> ENTER " + (veh.type === "boat" ? "BOAT" : "VEHICLE");
-            action = "vehicle";
           }
+
           if (promptText) UI.showPrompt(promptText);
           else UI.hidePrompt();
 
@@ -16004,7 +14300,7 @@
               if (action === "chest") openChest(near.obj, PC);
               else if (action === "loot") tryPickup(PC);
               else if (action === "drop") openDrop(near.obj, PC);
-              else if (action === "vehicle") enterVehicle(PC, veh);
+              // vehicle action removed
             }
           }
           Input.usePress = false;
@@ -16091,6 +14387,8 @@
 
           if (!MATCH_OVER && (MATCH_RUNNING || SPECTATING || !PC)) {
             if (PC) {
+              /* Update vehicles FIRST so their colliders are fresh for player physics */
+              updateVehicles(dt);
               if (PC.alive) {
                 updatePlayerInput(dt);
                 updatePlayer(dt);
@@ -16120,7 +14418,6 @@
                 if (bc.knocked) updateKnocked(bc, dt);
                 updateBot(bc, dt);
               }
-              updateVehicles(dt);
               updateStorm(dt);
               updateBus(dt);
               updateDrops(dt);
@@ -16210,16 +14507,10 @@
                 },
               ],
               [
-                "RAISING TILTED TOWERS",
-                function () {
-                  initBuildAssets();
-                },
-              ],
-              [
                 "MAPPING THE BATTLEFIELD",
                 function () {
                   initFX();
-                  createVehicles();
+                  // createVehicles(); removed
                 },
               ],
               [

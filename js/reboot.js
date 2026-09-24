@@ -16,8 +16,8 @@ import { GAMETIME, MODE, SPECTATE_TARGET, ALIVE, MATCH_OVER } from './main.js';
    76_REBOOT — reboot vans + reboot cards.
    When a squadmate is fully eliminated (not merely knocked) their reboot card
    drops where they died. A surviving teammate can carry it to one of the vans
-   dotted around the map and channel a reboot, bringing them back with nothing
-   but a pickaxe. Solo mode never produces cards.
+    dotted around the map and channel a reboot, bringing them back with nothing
+    but a pistol. Solo mode never produces cards.
    ========================================================================== */
 
         var VANS = [];
@@ -150,8 +150,8 @@ import { GAMETIME, MODE, SPECTATE_TARGET, ALIVE, MATCH_OVER } from './main.js';
             var p = POIS[i];
             var a = rnd(0, 6.28);
             var r = p.r * 0.55 + 7.5;
-            var x = clamp(p.x + Math.cos(a) * r, -150, 150);
-            var z = clamp(p.z + Math.sin(a) * r, -150, 150);
+            var x = clamp(p.x + Math.cos(a) * r, -180, 180);
+            var z = clamp(p.z + Math.sin(a) * r, -180, 180);
             var y = terrainHeightAt(x, z);
             if (y < 2.0 || terrainSlope(x, z) > 0.5) {
               a += 1.9;
@@ -296,9 +296,9 @@ import { GAMETIME, MODE, SPECTATE_TARGET, ALIVE, MATCH_OVER } from './main.js';
           mate.reloading = null;
           mate.fireCd = 0.7;
           mate.cards = 0;
-          /* reboots come back with nothing but a pickaxe — that is the whole point */
+          /* reboots come back with nothing but a pistol — that is the whole point */
           mate.slots = [
-            { id: "pickaxe", rarity: 0, ammoInMag: 0 },
+            { id: "pistol", rarity: 0, ammoInMag: 16 },
             null,
             null,
             null,
@@ -306,8 +306,7 @@ import { GAMETIME, MODE, SPECTATE_TARGET, ALIVE, MATCH_OVER } from './main.js';
             null,
           ];
           mate.slot = 0;
-          mate.ammo = { light: 0, medium: 0, heavy: 0, shell: 0, rocket: 0 };
-          mate.mats = { wood: 0, stone: 0, metal: 0 };
+          mate.ammo = { light: 24, medium: 0, heavy: 0, shell: 0, rocket: 0 };
           mate.heals = { band: 0, mini: 0, med: 0, pot: 0 };
           if (mate.mesh) mate.mesh.visible = true;
           if (mate.buildGroup) mate.buildGroup.visible = true;

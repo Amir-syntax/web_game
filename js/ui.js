@@ -9,7 +9,6 @@ import { renderer, camera, scene } from './gfx.js';
 import { CHESTS, POIS, terrainHeightAt, groundAt } from './world.js';
 import { PC, CHARS, CAM, attachWeapon } from './chars.js';
 import { WEAPONS, RARITY, teammates, damageChar, healChar, fireWeapon, useHeal } from './combat.js';
-import { BUILD_MODE, BUILD_PIECE, BUILD_MAT, BUILT_VARIANT, EDIT_TARGET, hideGhost, doEdit, updateGhost, updateBuild, BUILDS, damageBuild, placeBuild } from './build.js';
 import { STORM } from './storm.js';
 import { DROPS } from './drops.js';
 import { VANS } from './reboot.js';
@@ -103,19 +102,13 @@ import {
                 self.use = true;
                 self.usePress = true;
               } else if (k === "c") UI.healPress = true;
-              else if (k === "q") toggleBuildMode();
-              else if (k === "v") cycleBuildMat();
-              else if (k === "g") {
-                if (BUILD_MODE) doEdit();
-              } else if (k === "m" || k === "tab") {
+              else if (k === "m" || k === "tab") {
                 UI.toggleMap();
                 e.preventDefault();
               } else if (k === "i") UI.toggleInventory();
               else if (k >= "1" && k <= "6") {
                 var n = parseInt(k, 10);
-                if (BUILD_MODE && n <= 4)
-                  setBuildPiece(["wall", "floor", "ramp", "pyramid"][n - 1]);
-                else selectSlot(n - 1);
+                selectSlot(n - 1);
               }
               if (k === "tab") e.preventDefault();
             });
@@ -356,9 +349,6 @@ import {
             bind("tbAim", function () {
               self.aim = !self.aim;
             });
-            bind("tbBuild", function () {
-              toggleBuildMode();
-            });
             bind(
               "tbReload",
               function () {
@@ -429,26 +419,6 @@ import {
               bar.appendChild(d);
               this.slotEls.push(d);
             }
-            var mat = document.getElementById("mat");
-            var names = [
-              ["wood", "WOOD"],
-              ["stone", "STONE"],
-              ["metal", "METAL"],
-            ];
-            for (var m = 0; m < 3; m++) {
-              var e = document.createElement("div");
-              e.className = "mat " + names[m][0];
-              /* The chip used to be just a coloured square plus a number, so there was no
-         way to tell wood from stone from metal at a glance. Render the label. */
-              e.innerHTML =
-                '<i></i><b id="mat' +
-                names[m][1] +
-                '">0</b>' +
-                '<span style="font-size:9px;opacity:.6;letter-spacing:.4px;margin-left:3px">' +
-                names[m][1] +
-                "</span>";
-              mat.appendChild(e);
-            }
             var cons = document.getElementById("cons");
             var cnames = [
               ["band", "band", "BAND"],
@@ -494,14 +464,6 @@ import {
                   "SPECTATING &mdash; CLICK OR <b>FIRE</b> TO SWITCH",
                   2.4,
                 );
-              });
-            document
-              .getElementById("buildBar")
-              .addEventListener("click", function (e) {
-                var t = e.target.closest(".bp");
-                if (!t) return;
-                if (t.dataset.piece === "edit") doEdit();
-                else setBuildPiece(t.dataset.piece);
               });
             bar.addEventListener("click", function (e) {
               var t = e.target.closest(".slot");
@@ -564,9 +526,6 @@ import {
               "shieldText",
               "aliveCount",
               "elimCount",
-              "matWOOD",
-              "matSTONE",
-              "matMETAL",
               "cnsband",
               "cnsmini",
               "cnsmed",
@@ -584,10 +543,6 @@ import {
               "banner",
               "hitmarker",
               "crosshair",
-              "buildInfo",
-              "vehHud",
-              "vehSpeed",
-              "vehBoost",
               "specBar",
               "specName",
               "compassTape",
@@ -924,26 +879,6 @@ import {
               if (d.parentNode) d.parentNode.removeChild(d);
             }, 860);
           },
-          floatGain: function (amount, mat) {
-            var layer = document.getElementById("dmgLayer");
-            var d = document.createElement("div");
-            d.className = "dmgn";
-            d.style.color =
-              mat === "stone"
-                ? "#d8d8e2"
-                : mat === "metal"
-                  ? "#7fe0ff"
-                  : "#e0a86a";
-            d.style.fontSize = "15px";
-            d.textContent =
-              (amount > 0 ? "+" : "") + amount + " " + mat.toUpperCase();
-            d.style.left = "50%";
-            d.style.top = "60%";
-            layer.appendChild(d);
-            setTimeout(function () {
-              if (d.parentNode) d.parentNode.removeChild(d);
-            }, 860);
-          },
           hitFlash: function (v) {
             var e = document.getElementById("hitFlash");
             e.style.opacity = v;
@@ -1033,9 +968,6 @@ import {
           setReviveBar: function (v) {
             document.getElementById("reviveBar").firstElementChild.style.width =
               v * 100 + "%";
-          },
-          showVeh: function (on) {
-            this.el("vehHud").style.opacity = on ? 1 : 0;
           },
           showBusHint: function () {
             document.getElementById("busHint").classList.remove("hidden");
@@ -1139,7 +1071,7 @@ import {
               var s = PC.slots[i];
               html +=
                 '<div class="line"><span>' +
-                (i === 0 ? "PICKAXE" : "SLOT " + i) +
+                "SLOT " + (i + 1) +
                 "</span><b>" +
                 (s
                   ? WEAPONS[s.id].name +
@@ -1163,20 +1095,6 @@ import {
                 "</span><b>" +
                 PC.ammo[am[a][0]] +
                 "</b></div>";
-            html += "</div>";
-            html += '<div class="invCard"><h4>MATERIALS</h4>';
-            html +=
-              '<div class="line"><span>WOOD</span><b>' +
-              Math.round(PC.mats.wood) +
-              "</b></div>";
-            html +=
-              '<div class="line"><span>STONE</span><b>' +
-              Math.round(PC.mats.stone) +
-              "</b></div>";
-            html +=
-              '<div class="line"><span>METAL</span><b>' +
-              Math.round(PC.mats.metal) +
-              "</b></div>";
             html += "</div>";
             html += '<div class="invCard"><h4>CONSUMABLES</h4>';
             html +=
@@ -1235,9 +1153,6 @@ import {
             E("shieldText").textContent = Math.max(0, Math.round(P.shield));
             E("aliveCount").textContent = ALIVE;
             E("elimCount").textContent = P.eliminations;
-            E("matWOOD").textContent = Math.round(P.mats.wood);
-            E("matSTONE").textContent = Math.round(P.mats.stone);
-            E("matMETAL").textContent = Math.round(P.mats.metal);
             E("cnsband").textContent = P.heals.band;
             E("cnsmini").textContent = P.heals.mini;
             E("cnsmed").textContent = P.heals.med;
@@ -1320,32 +1235,6 @@ import {
               STORM.active && sd > STORM.r ? "#ff6b6b" : "#9dc4ff";
             E("lowhp").style.opacity =
               P.alive && P.health < 35 && !P.knocked ? 1 : 0;
-            E("buildInfo").classList.toggle("hidden", !BUILD_MODE);
-            document
-              .getElementById("buildBar")
-              .classList.toggle("hidden", !BUILD_MODE);
-            if (BUILD_MODE) {
-              var bi = this.el("buildInfo");
-              var txt =
-                "BUILD MODE &middot; <b>" +
-                BUILD_MAT.toUpperCase() +
-                "</b> &middot; <b>Q</b> EXIT &middot; <b>V</b> MATERIAL &middot; <b>G</b> EDIT &middot; <b>R</b> REPAIR";
-              if (EDIT_TARGET)
-                txt =
-                  "EDITING &middot; <b>G</b> CYCLE WINDOW / DOOR / HALF &middot; <b>R</b> REPAIR";
-              if (bi._t !== txt) {
-                bi.innerHTML = txt;
-                bi._t = txt;
-              }
-            }
-            if (P.vehicle && P === PC) {
-              this.el("vehSpeed").textContent = Math.round(
-                Math.abs(PC.vehicle.speed) * 3.6,
-              );
-              document.getElementById(
-                "vehBoost",
-              ).firstElementChild.style.width = (PC.vehBoost ? 0 : 100) + "%";
-            }
             if (!PC.alive && SPECTATING) this.showSpec(true);
             else this.showSpec(false);
             if (SPECTATE_TARGET && this.el("specName"))
@@ -1480,27 +1369,7 @@ import {
               g.arc((BUS.x + ox) * sc, (BUS.z + ox) * sc, 8, 0, 6.3);
               g.fill();
             }
-            /* vehicles */
-            g.fillStyle = "rgba(255,143,63,.85)";
-            for (var vi = 0; vi < VEHICLES.length; vi++) {
-              var v = VEHICLES[vi];
-              if (dist2(v.x, v.z, viewChar().x, viewChar().z) > 140) continue;
-              g.fillRect((v.x + ox) * sc - 3, (v.z + ox) * sc - 3, 6, 6);
-            }
-            /* supply drops + reboot vans */
-            if (DROPS) {
-              for (var di = 0; di < DROPS.length; di++) {
-                var dp = DROPS[di];
-                if (dp.opened) continue;
-                g.fillStyle = dp.state === "landed" ? "#8fd0ff" : "#ffd76a";
-                g.beginPath();
-                g.arc((dp.x + ox) * sc, (dp.z + ox) * sc, 6, 0, 6.3);
-                g.fill();
-                g.strokeStyle = "#0a1a3c";
-                g.lineWidth = 2;
-                g.stroke();
-              }
-            }
+            // vehicles removed from minimap
             if (VANS) {
               g.fillStyle = "rgba(107,255,208,.9)";
               for (var vj = 0; vj < VANS.length; vj++) {
@@ -1663,24 +1532,7 @@ import {
               g.fill();
             }
             g.fillStyle = "rgba(255,143,63,.9)";
-            for (var vi = 0; vi < VEHICLES.length; vi++) {
-              var v = VEHICLES[vi];
-              g.fillRect((v.x + ox) * sc - 5, (v.z + ox) * sc - 5, 10, 10);
-            }
-            /* supply drops + reboot vans */
-            if (DROPS) {
-              for (var di = 0; di < DROPS.length; di++) {
-                var dp = DROPS[di];
-                if (dp.opened) continue;
-                g.fillStyle = dp.state === "landed" ? "#8fd0ff" : "#ffd76a";
-                g.beginPath();
-                g.arc((dp.x + ox) * sc, (dp.z + ox) * sc, 10, 0, 6.3);
-                g.fill();
-                g.strokeStyle = "#0a1a3c";
-                g.lineWidth = 3;
-                g.stroke();
-              }
-            }
+            // vehicles removed from map
             if (VANS) {
               g.fillStyle = "rgba(107,255,208,.9)";
               for (var vj = 0; vj < VANS.length; vj++) {
@@ -1786,31 +1638,6 @@ import {
         }
 
         /* ---------------- actions ---------------- */
-        function toggleBuildMode() {
-          if (!PC || !PC.alive || PC.knocked) return;
-          BUILD_MODE = !BUILD_MODE;
-          document
-            .getElementById("buildBar")
-            .classList.toggle("hidden", !BUILD_MODE);
-          if (!BUILD_MODE) {
-            hideGhost();
-            EDIT_TARGET = null;
-          }
-        }
-        function setBuildPiece(p) {
-          BUILD_PIECE = p;
-          var els = document.querySelectorAll(".bp");
-          for (var i = 0; i < els.length; i++)
-            els[i].classList.toggle("active", els[i].dataset.piece === p);
-        }
-        function cycleBuildMat() {
-          var order = ["wood", "stone", "metal"];
-          BUILD_MAT = order[(order.indexOf(BUILD_MAT) + 1) % 3];
-          UI.showPrompt(
-            "BUILD MATERIAL: <b>" + BUILD_MAT.toUpperCase() + "</b>",
-            1.2,
-          );
-        }
         function selectSlot(i) {
           if (!PC || i < 0 || i > 5) return;
           PC.slot = i;
@@ -1833,5 +1660,5 @@ import {
 
 export {
   UI, Input, IS_MOBILE,
-  worldToScreen, toggleBuildMode, setBuildPiece, cycleBuildMat, selectSlot, onResize
+  worldToScreen, selectSlot, onResize
 };
